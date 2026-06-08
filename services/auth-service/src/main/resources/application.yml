@@ -1,0 +1,16 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update   # OK for a learning project; never use in real production
+    show-sql: true
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-ms: ${JWT_EXPIRATION_MS}

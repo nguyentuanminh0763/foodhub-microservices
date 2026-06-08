@@ -1,0 +1,77 @@
+# FoodHub - Phase 1 orchestration.
+# `docker compose up --build` should bring the whole Phase 1 system up.
+# Phase 2 services (RabbitMQ, Payment, Notification) are scaffolded but commented out.
+services:
+
+  # ---------- Databases (one per service - DB-per-service pattern) ----------
+  auth-mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${AUTH_DB_NAME}
+      MYSQL_USER: ${AUTH_DB_USER}
+      MYSQL_PASSWORD: ${AUTH_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${AUTH_DB_PASSWORD}
+    volumes: [auth_mysql_data:/var/lib/mysql]
+
+  order-mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${ORDER_DB_NAME}
+      MYSQL_USER: ${ORDER_DB_USER}
+      MYSQL_PASSWORD: ${ORDER_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${ORDER_DB_PASSWORD}
+    volumes: [order_mysql_data:/var/lib/mysql]
+
+  mongo:
+    image: mongo:7
+    volumes: [mongo_data:/data/db]
+
+  # ---------- Services ----------
+  auth-service:
+    build: ./services/auth-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://auth-mysql:3306/${AUTH_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${AUTH_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${AUTH_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
+    depends_on: [auth-mysql]
+
+  restaurant-service:
+    build: ./services/restaurant-service
+    environment:
+      MONGO_URI: ${RESTAURANT_MONGO_URI}
+      PORT: 3001
+    depends_on: [mongo]
+
+  order-service:
+    build: ./services/order-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://order-mysql:3306/${ORDER_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${ORDER_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${ORDER_DB_PASSWORD}
+      RESTAURANT_SERVICE_URL: ${RESTAURANT_SERVICE_URL}
+    depends_on: [order-mysql, restaurant-service]
+
+  gateway:
+    build: ./gateway
+    ports: ["8080:8080"]   # the ONLY port exposed to the outside world
+    depends_on: [auth-service, restaurant-service, order-service]
+
+  # ---------- Phase 2 (uncomment when you reach Phase 2) ----------
+  # rabbitmq:
+  #   image: rabbitmq:3-management
+  #   ports: ["15672:15672"]   # management UI
+  #
+  # payment-service:
+  #   build: ./services/payment-service
+  #   depends_on: [rabbitmq]
+  #
+  # notification-service:
+  #   build: ./services/notification-service
+  #   depends_on: [rabbitmq]
+
+volumes:
+  auth_mysql_data:
+  order_mysql_data:
+  mongo_data:

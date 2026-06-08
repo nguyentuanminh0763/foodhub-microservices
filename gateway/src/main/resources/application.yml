@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        # ----------------------------------------------------------------
+        # EXAMPLE ROUTE (filled in for you as a pattern to copy).
+        # Any request to /api/auth/** is forwarded to the auth-service.
+        # ----------------------------------------------------------------
+        - id: auth-service
+          uri: http://auth-service:8081
+          predicates:
+            - Path=/api/auth/**
+
+        # ================================================================
+        # TODO (YOU CODE THIS): add routes for the other services, same shape.
+        #  - restaurant-service  -> http://restaurant-service:3001  Path=/api/restaurants/**
+        #  - order-service       -> http://order-service:8082       Path=/api/orders/**
+        # Think about: should the gateway strip the /api prefix? (StripPrefix filter)
+        # ================================================================
+
+# TODO (YOU CODE THIS, Phase 1 later): add a global JWT validation filter so the
+# gateway rejects requests without a valid token BEFORE they reach a service.
+# Pre-read this with Claude first: "where should JWT validation live - gateway or each service?"
