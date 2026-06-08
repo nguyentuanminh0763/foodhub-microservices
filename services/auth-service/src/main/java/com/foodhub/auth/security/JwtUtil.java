@@ -1,19 +1,43 @@
 package com.foodhub.auth.security;
 
-// ============================================================================
-// TODO (YOU CODE THIS) — JWT helper
-// ----------------------------------------------------------------------------
-// Lớp này tạo và xác thực JWT. Bạn tự viết, dùng thư viện jjwt đã thêm trong pom.
-// Cần 2 method chính:
-//   - String generateToken(String email, String role)  -> ký token, set expiration
-//   - String validateAndGetSubject(String token)        -> verify chữ ký, trả về email
-// Đọc secret và expiration từ application.yml qua @Value("${jwt.secret}") ...
-//
-// PRE-READ trước khi code (hỏi ở chat app):
-//   - JWT gồm 3 phần gì? Phần nào được ký, phần nào ai cũng đọc được?
-//   - Vì sao KHÔNG để dữ liệu nhạy cảm trong payload của JWT?
-//   - Stateless auth khác session-based ở chỗ nào? Liên quan gì tới microservices?
-// ============================================================================
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
+
+@Component
 public class JwtUtil {
-    // your token methods here
+
+    @Value("${jwt.secret}")
+    private String secret;
+
+    @Value("${jwt.expiration-ms}")
+    private long expirationMs;
+
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public String generateToken(String email, String role) {
+        return Jwts.builder()
+                .subject(email)
+                .claim("role", role)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + expirationMs))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public String validateAndGetEmail(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .getSubject();
+    }
 }
