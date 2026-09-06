@@ -169,15 +169,18 @@ is on the "propose and wait" list in `CLAUDE_RULES.md` for a reason.
 
 ## Ports
 
-| What | Where |
-|---|---|
-| Gateway | `localhost:3000` ← the only one a client should touch |
-| restaurant-service | `localhost:3001` (direct, debugging only) |
-| order-service | `localhost:3002` (direct, debugging only) |
-| restaurants-db | `localhost:5433` |
-| orders-db | `localhost:5434` |
-| Kafka | `localhost:9092` from the host, `kafka:19092` from containers *(Phase 3)* |
-| Kafka UI | `localhost:8080` *(Phase 3)* |
+| What | Where | Exists? |
+|---|---|---|
+| Gateway | `localhost:3000` ← the only one a client should touch | Phase 1 |
+| restaurant-service | `localhost:3001` (direct, debugging only) | Phase 1 |
+| order-service | `localhost:3002` (direct, debugging only) | Phase 1 |
+| **restaurants-db** | **`localhost:5433`** | ✅ running |
+| **orders-db** | **`localhost:5434`** | ✅ running |
+| Kafka | `localhost:9092` from the host, `kafka:19092` from containers | Phase 3 |
+| Kafka UI | `localhost:8080` | Phase 3 |
+| notification-service | `localhost:3004` | Phase 3 |
+| payment-service | `localhost:3003` | Phase 4 |
+| Redis | `localhost:6379` | Phase 5 |
 
 Postgres uses 5433/5434 rather than 5432 to avoid colliding with a Postgres you may already have
 installed. Inside the compose network services still use 5432.

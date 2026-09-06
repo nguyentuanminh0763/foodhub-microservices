@@ -17,8 +17,10 @@ Repo: `https://github.com/nguyentuanminh0763/foodhub-microservices`
 **Scope: B** (decided 2026-09-06) — browse, order, pay, restaurant confirms, stops at "food ready".
 Delivery and driver tracking are scope C, deferred.
 
-> ⚠️ Mid-migration: **Spring Boot + Express → NestJS**. The Java/Express code still in the repo is
-> legacy awaiting deletion — do not build on it.
+> Migrated from Spring Boot + Express to NestJS on 2026-09-06. The old code is on the
+> `legacy/spring` branch, **not** on `main` — do not resurrect it.
+> Live infrastructure right now: `restaurants-db` (5433) and `orders-db` (5434), both healthy.
+> No services exist yet.
 
 ---
 
@@ -82,7 +84,7 @@ it asked the user to invent content; a journal always has a real incident to des
 ```
                           ┌──────────────┐
         Client  ────────▶ │   Gateway    │  :3000   only public door
-                          └──────┬───────┘          JWT + rate limit (Phase 5)
+                          └──────┬───────┘          JWT + rate limit (Phase 6)
                      HTTP        │        HTTP
              ┌───────────────────┴───────────────────┐
              ▼                                       ▼
@@ -91,16 +93,25 @@ it asked the user to invent content; a journal always has a real incident to des
    │       :3001         │◀── HTTP ──────│       :3002         │  sync: real dish? real price?
    │   restaurants-db    │               │     orders-db       │
    └─────────────────────┘               └──────────┬──────────┘
-                                                    │ publish (Phase 3)
+                                                    │ publish, AFTER the write commits
                                                     ▼
                                           ┌───────────────────┐
                                           │      Kafka        │  order.created
-                                          └─────────┬─────────┘
-                                                    ▼
-                                        ┌───────────────────────┐
-                                        │ notification-service  │  (Phase 3)
-                                        └───────────────────────┘
+                                          └────┬─────────┬────┘
+                                    consume    │         │    consume
+                              ┌────────────────┘         └──────────────┐
+                              ▼                                         ▼
+                  ┌───────────────────────┐              ┌───────────────────────┐
+                  │ notification-service  │  Phase 3     │   payment-service     │  Phase 4
+                  │        :3004          │              │        :3003          │
+                  └───────────────────────┘              └───────────┬───────────┘
+                              ▲                                      │
+                              └──── payment.succeeded ───────────────┘
 ```
+
+**Two independent consumer groups on one topic** is the reason Kafka is here rather than a queue.
+Until payment-service exists there is only one consumer, and one consumer is a case RabbitMQ serves
+better — say so honestly rather than pretending otherwise.
 
 - **Sync (HTTP)** — order asks restaurant *"does this dish exist, what does it cost?"* and blocks.
   Cost: **temporal coupling** — restaurant down means order down. Timeouts, retries and circuit
@@ -116,7 +127,7 @@ it asked the user to invent content; a journal always has a real incident to des
 | ORM | **Prisma** — one `schema.prisma` + one DB per service |
 | Database | PostgreSQL 16 — one per service |
 | Messaging | Kafka 3.9 (KRaft) via **`kafkajs`** directly |
-| Cache / locking | Redis (Phase 4) |
+| Cache / locking | Redis (Phase 5) |
 | Validation | `class-validator` + global `ValidationPipe` |
 | Infra / CI | Docker Compose, GitHub Actions |
 
@@ -126,7 +137,8 @@ it asked the user to invent content; a journal always has a real incident to des
 |---|---|---|
 | ORM | **Prisma**, not TypeORM | Real migrations, real type safety, better represented in current Node job ads |
 | Repo layout | **One `package.json` per service**, no workspaces | Honest to microservices: independent deploys, simple Dockerfiles. Sharing DTOs is the lesson, not a nuisance to engineer away |
-| Auth | **Deferred to Phase 5** | Phases 1–4 work without it. Deciding now is guessing |
+| Auth | **Deferred to Phase 6** | Phases 1–5 work without it. Deciding now is guessing |
+| Order entry | **Gateway → HTTP → order-service**, client gets `201` | Rejected: gateway emits to Kafka, client gets `202`. See `docs/ai-journal/01_order-entry-sync-vs-async.md` |
 | Legacy code | **Branch `legacy/spring`, then delete from `main`** | Old code stays visible on GitHub, `main` stays clean, and the migration story has evidence |
 
 `kafkajs` directly rather than `@nestjs/microservices`: the Nest wrapper hides topics, partitions,
@@ -186,16 +198,16 @@ foodhub-microservices/
     └── order/         :3002 + orders-db :5434
 ```
 
-No `payment/` or `notification/` until **Phase 3**. A folder holding only an empty README is debt,
-and it teaches the reader that the folder is decorative.
+No `notification/` until **Phase 3**, no `payment/` until **Phase 4**. A folder holding only an empty
+README is debt, and it teaches the reader that the folder is decorative.
 
-**Still open:** where auth lives — its own service, or inside the gateway. Decide in Phase 5 and
+**Still open:** where auth lives — its own service, or inside the gateway. Decide in Phase 6 and
 journal the reason.
 
 ### Rule on adding technology
 
 A tool enters only when it answers a problem the project has actually hit. This is the one rule kept
-intact from the old agreement, because it is correct. Redis arrives in Phase 4 because that is when
+intact from the old agreement, because it is correct. Redis arrives in Phase 5 because that is when
 overselling appears. gRPC / GraphQL / Elasticsearch / Kubernetes are out of scope until this roadmap
 changes first.
 

@@ -36,7 +36,7 @@
   biggest difference from a monolith and the source of most of the pain worth understanding.
 
 - **Technology enters only when it answers a problem actually hit.** The one rule kept intact from
-  the old working agreement. Redis in Phase 4, when overselling appears — not before. gRPC,
+  the old working agreement. Redis in Phase 5, when overselling appears — not before. gRPC,
   GraphQL, Elasticsearch, Kubernetes: out of scope until the roadmap in `CLAUDE.md` changes first.
 
 ---

@@ -1,5 +1,9 @@
 # Architecture
 
+> Read [`BUSINESS_OVERVIEW.md`](./BUSINESS_OVERVIEW.md) first. It describes one concrete order from
+> 19:30 to 19:50, and every decision in this document points back at a moment in it.
+> **Scope B** — browse, order, pay, restaurant confirms. Delivery is scope C, deferred.
+
 ## Method: walking skeleton first
 
 The first milestone is not a feature. It is a request travelling from a client, through the gateway,
@@ -16,7 +20,7 @@ that has never stood up is expensive to debug.
    service's database. If order needs restaurant data it calls the API. This is
    *database-per-service*, the single biggest difference from a monolith.
 2. **The gateway is the only public door.** Clients never reach a service directly. It routes, and
-   from Phase 5 it validates the JWT once at the edge.
+   from Phase 6 it validates the JWT once at the edge.
 3. **Services are independently deployable.** Each has its own `package.json`, its own Dockerfile,
    its own database. There is no shared library — see *Sharing contracts* below.
 
@@ -40,8 +44,18 @@ Owns orders. Placing one:
 2. writes the order to its own database;
 3. publishes `order.created` to Kafka (**async**) and returns immediately.
 
-### notification-service — Phase 3
-Pure consumer. Reacts to `order.created`. It has no inbound API from the gateway.
+### notification-service (:3004) — Phase 3
+Pure consumer. Reacts to `order.created` and later `payment.succeeded` and `order.confirmed`. It has
+no inbound API from the gateway and owns no database.
+
+### payment-service (:3003) — Phase 4
+Charges the customer and owns payment records. It is the **second independent consumer** of
+`order.created`, and that is the point of introducing it: two consumer groups reading one topic,
+neither aware of the other, is the capability a task queue does not have. Until payment-service
+exists there is one consumer, and one consumer is a case RabbitMQ would serve better.
+
+It publishes `payment.succeeded`, which notification-service also consumes — so the same service is
+a consumer of two different topics, which is where consumer-group naming starts to matter.
 
 ## Two communication styles
 
@@ -57,6 +71,39 @@ a while the order exists and no notification has been sent.
 The rule worth remembering: **synchronous when the caller cannot continue without the answer;
 asynchronous when the work can happen afterwards.** Price validation is the first. Notifying the
 customer, updating analytics, marking stock are the second.
+
+## Decision record: how an order enters the system
+
+**The gateway calls order-service over HTTP. It does not emit into Kafka.** The customer gets `201`
+with the real order and total; an out-of-stock dish returns `409` while they are still on the cart
+screen.
+
+The rejected alternative is a real and common pattern: the gateway emits `order.created` into Kafka
+and returns `202 Accepted`, with order-service as a *consumer* rather than the producer. It survives
+flash-sale load — ten thousand simultaneous orders only append to a log — which is why concert ticket
+sales are built that way.
+
+Rejected for three reasons:
+
+1. **Where the error lands.** Both paths take about a second. But synchronously the failure arrives
+   while the customer can still fix their cart. Asynchronously it arrives as a push notification
+   after they have put the phone down, and they re-order from scratch.
+2. **FoodHub does not have that load shape.** The contention it genuinely has is five people wanting
+   the last portion — a locking problem for Redis in Phase 5, not ten thousand requests a second.
+3. **It costs no Kafka learning.** order-service still publishes `order.created` and two consumer
+   groups still read it. The async entry would only add WebSocket or push plumbing to return a
+   result, which teaches nothing this project is trying to learn.
+
+Full write-up: [`ai-journal/01_order-entry-sync-vs-async.md`](./ai-journal/01_order-entry-sync-vs-async.md).
+Reopen it with load numbers, not with a diagram.
+
+**Two rules follow:**
+
+- **The gateway is a dumb proxy.** It routes, forwards, and maps downstream failures to status codes.
+  It does not know what an order is.
+- **Publish only after the write commits.** `order.created` goes to Kafka *after* the order is in
+  Postgres, never before — otherwise payment-service can charge for an order that failed to save.
+  That bug only appears when the database misbehaves, which is exactly when nobody is testing.
 
 ### Why Kafka is not between gateway and services
 
@@ -114,7 +161,7 @@ for orders.
 
 ## Decision record: where Redis fits
 
-Redis arrives in **Phase 4**, answering a problem the project will have actually hit by then:
+Redis arrives in **Phase 5**, answering a problem the project will have actually hit by then:
 
 1. **Contention on the last portion.** Two customers order the final serving simultaneously. Without
    coordination both succeed and the restaurant is oversold. A `DECR`-style atomic operation or a
@@ -169,7 +216,7 @@ what it would cost to change my mind later."*
 ## Request walkthrough: placing an order
 
 1. Client → gateway: `POST /api/orders`
-2. Gateway routes to order-service *(from Phase 5, validating the JWT first)*
+2. Gateway routes to order-service *(from Phase 6, validating the JWT first)*
 3. order-service → restaurant-service (**sync HTTP**): do these dishes exist, what do they cost?
 4. order-service writes the order to `orders-db` with the prices it just read
 5. order-service publishes `order.created` to Kafka and returns `201 Created`
