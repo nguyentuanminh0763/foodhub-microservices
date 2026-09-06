@@ -43,8 +43,28 @@
 
 ## User context
 
-- **A working developer.** Reads diffs and stack traces. Knows Node/Express, React, Spring Boot,
-  MySQL, MongoDB, JWT. Explain at the level of **patterns and tradeoffs**, not basic syntax.
+- **A working developer in application code, a beginner in infrastructure.** This split is the whole
+  point and getting it wrong wastes the session.
+  - **Knows well:** Node/Express, React/React Native, Spring Boot, MySQL, MongoDB, JWT, REST.
+    Reads diffs and stack traces. Do not explain basic syntax or what an API is.
+  - **New to, and here to learn:** Docker and containers, Docker Compose, healthchecks, Kafka,
+    Redis, Postgres as a container, Prisma/migrations, CI/CD, orchestration.
+
+  **Corrected 2026-09-06** after the user said: *"you act like I already know."* This file previously
+  said only "a working developer — explain at the level of patterns, not basic syntax", and that got
+  applied to infrastructure too. Writing Spring Boot for years is entirely compatible with never
+  having written a `docker-compose.yml`.
+
+  **How to apply — concretely:**
+  1. Before running a command, say in one line what it does and why.
+  2. Name a new infrastructure term the first time it appears — container, image, volume,
+     healthcheck, migration, consumer group. One sentence, not a lecture.
+  3. After running it, read the output back and say what it means. Do not assume the user can
+     interpret `healthy`, a container name, or a migration log.
+  4. If the user asks "what is X" about something already used, that is a signal of moving too fast —
+     slow down rather than answering only that one question.
+  5. Keep it short. Repeated requests for brevity in this project were real: long explanations made
+     things worse, not better.
 - **Conversation in Vietnamese. All files in English** — including internal docs. Chosen 2026-09-06
   for token efficiency: Vietnamese diacritics tokenize poorly. This is deliberate, not an accident.
 - Commit messages: English, Conventional Commits.
