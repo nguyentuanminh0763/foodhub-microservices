@@ -27,23 +27,27 @@ in the next 6–12 months.
 
 ## Current state
 
+`main` now holds **documentation only**. All application code was removed in task 1.3 and lives on
+the `legacy/spring` branch.
+
 | Component | State | Notes |
 |---|---|---|
-| Git / GitHub | ✅ 2 commits, `main` in sync with `origin` | The only publicly existing artifact |
-| Git identity | ✅ Fixed 2026-09-06 | Own GPG key `5359A8A8A6C4F69C`, noreply email. Public key **still needs pasting into GitHub** for the Verified badge |
-| `docker-compose.yml` | ⚠️ Written, **never proven to run** | MySQL ×2 + Mongo + 4 services — all legacy |
-| auth-service (Spring) | ⛔ **Does not compile** | `config/SecurityConfig.java` has 6 unfilled `// FILL:` markers — deliberate under the retired working mode |
-| ├ `AuthService.register/login` | ✅ User-written, logic correct | BCrypt + JWT |
-| ├ `AuthController` | ⛔ `/health` only | Missing `POST /register`, `POST /login` |
-| └ `User` entity | ⚠️ `@CreatedDate` without `@EnableJpaAuditing` | `createdAt` would always be NULL |
-| restaurant-service (Express) | ⛔ TODO comments only | Model / routes / controller all empty |
-| order-service (Spring) | ⛔ Empty skeleton | `Order` has no fields, no `OrderRepository` |
-| gateway (Spring Cloud) | ⚠️ One example route (`/api/auth/**`) | No other routes, no JWT filter |
-| payment / notification | ⛔ README only | To be deleted; recreated in Phase 3 |
-| `LEARNING_LOG.md` | ⛔ Empty | Superseded by `docs/ai-journal/` |
+| Git / GitHub | ✅ `main` and `legacy/spring` both pushed | |
+| Git identity | ✅ Fixed 2026-09-06 | Own GPG key `5359A8A8A6C4F69C`, noreply email, commits signed. Public key **still needs pasting into GitHub** for the Verified badge (cosmetic) |
+| Documentation | ✅ Rewritten for the target stack, all English | README, ARCHITECTURE, RUNNING, CLAUDE*, PROJECT_STATE, ai-journal |
+| `docker-compose.yml` | ⛔ Still the legacy file (MySQL ×2 + Mongo + 4 Spring/Express services) | Rewritten in task 1.4 |
+| `.env.example` | ⛔ Still legacy variables | Rewritten in task 1.4 |
+| `services/gateway` | ⛔ Not created | Task 1.7 |
+| `services/restaurant` | ⛔ Not created | Task 1.5 |
+| `services/order` | ⛔ Not created | Task 1.6 |
+| `.github/workflows/ci.yml` | ⛔ Not created | Task 1.8 |
 
-**Because `auth-service` does not compile, its image build fails, so `docker compose up --build`
-cannot succeed.** There is no evidence the system has ever run end to end.
+### On the `legacy/spring` branch
+
+Preserved, not lost: the hand-written `AuthService.register/login` (BCrypt + JWT, logic correct),
+the `SecurityConfig` scaffold with 6 unfilled `// FILL:` markers, empty Order/Restaurant skeletons,
+and the Spring Cloud Gateway with one example route. That branch never compiled — `SecurityConfig`
+was deliberately left incomplete under the retired working mode.
 
 ---
 
@@ -80,11 +84,11 @@ No code was produced this session — deliberate. The next real verification is 
 | # | Issue | Severity | Notes |
 |---|---|---|---|
 | 1 | Nothing runs end to end after ~3 weeks | 🔴 High | Root cause was the old working mode; addressed this session |
-| 2 | `docs/ARCHITECTURE.md` and `docs/RUNNING.md` still describe the Spring stack | 🟠 Medium | Being rewritten in task 1.2. Confidently wrong docs are worse than none |
+| 2 | `docker-compose.yml` and `.env.example` still hold legacy config | 🟠 Medium | Task 1.4 rewrites both. Until then `docker compose up` refers to services that no longer exist |
 | 3 | GPG public key not yet uploaded to GitHub | 🟢 Low | Until then commits stay *Unverified*. Cosmetic only — attribution already works |
 | 4 | `.env` holds real secrets, gitignored | 🟢 Low | Re-check before every push |
-| 5 | Legacy Java/Express code still on `main` | 🟠 Medium | Task 1.3: push `legacy/spring`, then delete in a separate `refactor:` commit |
-| 6 | Real email exposed in the 2 existing commits | 🟢 Low | Not worth rewriting history for code about to be deleted. Clean from here on |
+| 5 | ~~Legacy Java/Express code on `main`~~ | ✅ Done | Task 1.3 — preserved on `legacy/spring`, removed from `main` |
+| 6 | Real email exposed in the first 2 commits | 🟢 Low | Not worth rewriting history. Clean from commit `40fdbea` onward |
 
 ---
 
