@@ -1,123 +1,62 @@
-# FoodHub - Phase 1 orchestration.
-# `docker compose up --build` should bring the whole Phase 1 system up.
-# Phase 2 services (RabbitMQ, Payment, Notification) are scaffolded but commented out.
+# FoodHub — Phase 1 orchestration.
 #
-# TWO WAYS TO RUN — see docs/RUNNING.md:
-#   1. Fast loop (while coding one service): start only its DB, run the service from the IDE.
-#        docker compose up -d auth-mysql
+# Task 1.4 state: databases only. Services are added in tasks 1.5-1.7,
+# Kafka in Phase 3, Redis in Phase 4. Nothing is added before it is needed.
+#
+# Two ways to run — see docs/RUNNING.md:
+#   1. Fast loop (while coding one service): start only its database.
+#        docker compose up -d restaurants-db
 #   2. Full system (integration check):
 #        docker compose up --build
+
 services:
 
-  # ---------- Databases (one per service - DB-per-service pattern) ----------
-  # Host ports are published so you can run a service from the IDE and still reach
-  # its database. Non-standard host ports (3307/3308) avoid clashing with a MySQL
-  # you may already have on 3306. Inside the compose network services still use 3306.
-  auth-mysql:
-    image: mysql:8.0
-    ports: ["3307:3306"]
-    environment:
-      MYSQL_DATABASE: ${AUTH_DB_NAME}
-      MYSQL_USER: ${AUTH_DB_USER}
-      MYSQL_PASSWORD: ${AUTH_DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${AUTH_DB_PASSWORD}
-    volumes: [auth_mysql_data:/var/lib/mysql]
-    # Without this, `depends_on` only waits for the CONTAINER to start, not for MySQL
-    # to accept connections — and Spring Boot boots faster than MySQL initialises.
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 20s
+  # ---------- Databases: one per service (database-per-service) ----------
+  # Host ports are published so a service can run from the terminal and still
+  # reach its database. 5433/5434 avoid colliding with a Postgres already on
+  # 5432. Inside the compose network services still use 5432.
 
-  order-mysql:
-    image: mysql:8.0
-    ports: ["3308:3306"]
+  restaurants-db:
+    image: postgres:16
+    ports: ["5433:5432"]
     environment:
-      MYSQL_DATABASE: ${ORDER_DB_NAME}
-      MYSQL_USER: ${ORDER_DB_USER}
-      MYSQL_PASSWORD: ${ORDER_DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${ORDER_DB_PASSWORD}
-    volumes: [order_mysql_data:/var/lib/mysql]
+      POSTGRES_DB: ${RESTAURANTS_DB_NAME}
+      POSTGRES_USER: ${RESTAURANTS_DB_USER}
+      POSTGRES_PASSWORD: ${RESTAURANTS_DB_PASSWORD}
+    volumes: [restaurants_data:/var/lib/postgresql/data]
+    # Without this, depends_on only waits for the CONTAINER to start, not for
+    # Postgres to accept connections - and a Node process boots much faster
+    # than Postgres initialises. See CLAUDE_RULES.md trap #3.
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
-      retries: 30
-      start_period: 20s
-
-  mongo:
-    image: mongo:7
-    ports: ["27017:27017"]
-    volumes: [mongo_data:/data/db]
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
+      retries: 20
       start_period: 10s
 
-  # ---------- Services ----------
-  auth-service:
-    build: ./services/auth-service
+  orders-db:
+    image: postgres:16
+    ports: ["5434:5432"]
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://auth-mysql:3306/${AUTH_DB_NAME}
-      SPRING_DATASOURCE_USERNAME: ${AUTH_DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${AUTH_DB_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
-    depends_on:
-      auth-mysql:
-        condition: service_healthy
+      POSTGRES_DB: ${ORDERS_DB_NAME}
+      POSTGRES_USER: ${ORDERS_DB_USER}
+      POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD}
+    volumes: [orders_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
-  restaurant-service:
-    build: ./services/restaurant-service
-    environment:
-      MONGO_URI: ${RESTAURANT_MONGO_URI}
-      PORT: 3001
-    depends_on:
-      mongo:
-        condition: service_healthy
+  # ---------- Services (tasks 1.5 - 1.7) ----------
+  # restaurant  :3001  depends_on restaurants-db (service_healthy)
+  # order       :3002  depends_on orders-db (service_healthy)
+  # gateway     :3000  the only published port once it exists
 
-  order-service:
-    build: ./services/order-service
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://order-mysql:3306/${ORDER_DB_NAME}
-      SPRING_DATASOURCE_USERNAME: ${ORDER_DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${ORDER_DB_PASSWORD}
-      RESTAURANT_SERVICE_URL: ${RESTAURANT_SERVICE_URL}
-    depends_on:
-      order-mysql:
-        condition: service_healthy
-      restaurant-service:
-        condition: service_started
-
-  gateway:
-    build: ./gateway
-    ports: ["8080:8080"]   # the ONLY port exposed to the outside world
-    depends_on:
-      auth-service:
-        condition: service_started
-      restaurant-service:
-        condition: service_started
-      order-service:
-        condition: service_started
-
-  # ---------- Phase 2 (uncomment when you reach Phase 2) ----------
-  # rabbitmq:
-  #   image: rabbitmq:3-management
-  #   ports: ["15672:15672"]   # management UI
-  #
-  # payment-service:
-  #   build: ./services/payment-service
-  #   depends_on: [rabbitmq]
-  #
-  # notification-service:
-  #   build: ./services/notification-service
-  #   depends_on: [rabbitmq]
+  # ---------- Phase 3: kafka + kafka-ui + notification ----------
+  # ---------- Phase 4: redis ----------
 
 volumes:
-  auth_mysql_data:
-  order_mysql_data:
-  mongo_data:
+  restaurants_data:
+  orders_data:
