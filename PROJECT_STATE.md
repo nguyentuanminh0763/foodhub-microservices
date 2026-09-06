@@ -1,8 +1,20 @@
 # FoodHub — Project State
 
-> **Last updated:** 2026-09-06 (stack pivot + git identity fixed + outer docs rewritten)
-> **Overall:** ⛔ Nothing runs end to end. Repo is mid-migration: Spring Boot + Express being
-> replaced by NestJS + Postgres + Kafka + Redis.
+> **Last updated:** 2026-09-06 (tasks 1.1–1.4 done, all docs realigned)
+> **Overall:** 🔜 Phase 1, tasks 1.1–1.4 complete. Two Postgres containers running and healthy.
+> No application code exists yet — `main` is documentation plus `docker-compose.yml`.
+
+## ▶ Next action
+
+**Task 1.5 — build `services/restaurant`:** a NestJS app exposing
+`GET /api/restaurants/health`, a `schema.prisma` describing `restaurants` and `dishes`, a first
+Prisma migration that creates those tables in `restaurants-db`, and a Dockerfile.
+
+Done when `curl http://localhost:3001/api/restaurants/health` answers **and** `\dt` inside
+`restaurants-db` lists two tables instead of "Did not find any relations".
+
+Then 1.6 (`services/order`, same shape), 1.7 (gateway proxy — **ends Phase 1**), 1.8 (minimal CI).
+Full task table: `CLAUDE.md` → Phase 1, broken down.
 
 ---
 
@@ -53,7 +65,37 @@ was deliberately left incomplete under the retired working mode.
 
 ---
 
-## Latest update — Stack pivot, new working mode, git identity (2026-09-06)
+## Latest update — Legacy removed, databases running, docs realigned (2026-09-06)
+
+**Task 1.3** — pushed branch `legacy/spring`, deleted all Spring/Express code from `main`. The
+hand-written `AuthService.register/login` is preserved on that branch, not lost.
+
+**Task 1.4** — `docker-compose.yml` rewritten: two Postgres 16 containers, `pg_isready`
+healthchecks, no services yet. **Verified against a running daemon**, not just parsed:
+
+| Check | Result |
+|---|---|
+| `docker compose up -d` | Pulled `postgres:16`, created network, 2 volumes, 2 containers |
+| `docker compose ps` | Both `Up (healthy)` after ~26s |
+| `\l` inside `restaurants-db` | `foodhub_restaurants` auto-created from `POSTGRES_*` env vars — no manual pgAdmin step |
+| `\dt` | `Did not find any relations` — empty, as intended. Prisma creates tables in 1.5 |
+
+**Docs realigned.** Scope B, the synchronous order-entry decision, and the corrected skill profile
+all landed *after* README and ARCHITECTURE were written, leaving them wrong. Fixed 10 stale phase
+numbers, added payment-service to both diagrams, linked `BUSINESS_OVERVIEW.md`, and removed a
+`CLAUDE.md` warning about Java code that task 1.3 had already deleted.
+
+**Two working-agreement changes**, both from user pushback and both recorded so they persist:
+- **BRIEF → DECIDE** added to the loop. Claude had been deciding architecture the user had no basis
+  to evaluate — see `CLAUDE.md`.
+- **Skill profile corrected**: strong in application code, **beginner in infrastructure**. The two do
+  not follow from each other.
+- **Doc-sync rule expanded** beyond `PROJECT_STATE.md` to cover README, ARCHITECTURE and RUNNING,
+  with a grep-based check. See `CLAUDE_RULES.md` → *Doc sync*.
+
+---
+
+## Previous update — Stack pivot, new working mode, git identity (2026-09-06)
 
 **Created:** `PROJECT_STATE.md`, `CLAUDE_RULES.md`, `docs/ai-journal/00_stack-pivot.md`
 **Rewritten:** `CLAUDE.md`, `README.md`, `../CLAUDE.md` (reduced to a stub)
@@ -96,6 +138,7 @@ No code was produced this session — deliberate. The next real verification is 
 
 ## Update history
 
+### 2026-09-06 — Tasks 1.3–1.4: legacy removed, two Postgres running, docs realigned
 ### 2026-09-06 — Stack pivot, new working mode, git identity fixed
 ### 2026-08-16 — TicketFlow built as a separate NestJS + Kafka project (since abandoned)
 ### ~2026-06-16 — Phase 1 scaffold: auth/restaurant/order/gateway on Spring + Express
