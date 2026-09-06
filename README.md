@@ -9,8 +9,10 @@ around them deeply enough to **defend every decision in an interview** — not j
 is, told as one concrete order from 19:30 to 19:50. Every technology below traces to a specific
 moment in that story. If a tool cannot be pointed at a line in it, it does not belong in this repo.
 
-> **Status: Phase 1 in progress. Nothing runs end to end yet.**
-> Two Postgres containers are up and healthy; no services exist yet.
+> **Status: Phase 1 in progress. The walking skeleton answers.**
+> `curl localhost:3000/api/restaurants/health` returns `200` through the gateway — but from three
+> `node dist/main.js` processes, **not** from containers, and no service touches a database yet.
+> Two Postgres containers are up and healthy. Dockerfiles, compose wiring and Prisma are next.
 > Honest per-component state: [`PROJECT_STATE.md`](./PROJECT_STATE.md).
 > This README describes the **target** — do not assume anything below works today.
 
@@ -78,7 +80,7 @@ Full reasoning, including where each choice is a trade rather than an upgrade:
 
 | Layer | Technology |
 |---|---|
-| Gateway | NestJS 11, `@nestjs/axios` |
+| Gateway | NestJS 11, native `fetch` — no HTTP client dependency |
 | Services | NestJS 11, TypeScript |
 | ORM | Prisma — one `schema.prisma` and one database per service |
 | Database | PostgreSQL 16 — **one per service** |
@@ -100,9 +102,9 @@ Two deliberate choices worth naming:
 
 | What | Where | Exists? |
 |---|---|---|
-| Gateway | `localhost:3000` ← the only one a client should touch | Phase 1 |
-| restaurant-service | `localhost:3001` (direct access, debugging only) | Phase 1 |
-| order-service | `localhost:3002` (direct access, debugging only) | Phase 1 |
+| Gateway | `localhost:3000` ← the only one a client should touch | ✅ **runs locally** |
+| restaurant-service | `localhost:3001` (direct access, debugging only) | ✅ **runs locally** |
+| order-service | `localhost:3002` (direct access, debugging only) | ✅ **runs locally** |
 | **restaurants-db** | **`localhost:5433`** | ✅ **running** |
 | **orders-db** | **`localhost:5434`** | ✅ **running** |
 | Kafka broker | `localhost:9092` from the host, `kafka:19092` from containers | Phase 3 |
@@ -176,7 +178,7 @@ an empty README teaches the reader that the folder is decorative.
 This project began as Spring Boot + Express with MySQL, MongoDB and RabbitMQ. It was migrated to
 NestJS + Postgres + Kafka in September 2026 to match the infrastructure actually worth learning.
 The original stack is preserved on the `legacy/spring` branch. The migration reasoning is in
-[`docs/ai-journal/00_doi-huong-stack.md`](./docs/ai-journal/00_doi-huong-stack.md).
+[`docs/ai-journal/00_stack-pivot.md`](./docs/ai-journal/00_stack-pivot.md).
 
 ---
 

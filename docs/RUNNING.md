@@ -1,7 +1,8 @@
 # Running & testing
 
-> **Phase 1 is in progress — the services described here do not exist yet.** This documents the
-> intended workflow. Current per-component state: [`PROJECT_STATE.md`](../PROJECT_STATE.md).
+> **Phase 1 is in progress.** All three services exist and answer `/health`, but only from the
+> terminal (loop 2) — there are no Dockerfiles yet, so **loop 3 does not work**, and no service
+> talks to Postgres yet. Current per-component state: [`PROJECT_STATE.md`](../PROJECT_STATE.md).
 
 The single most important habit on this project: **never write more than ~20 lines without running
 something.** Code you have not run is a guess.
@@ -171,9 +172,9 @@ is on the "propose and wait" list in `CLAUDE_RULES.md` for a reason.
 
 | What | Where | Exists? |
 |---|---|---|
-| Gateway | `localhost:3000` ← the only one a client should touch | Phase 1 |
-| restaurant-service | `localhost:3001` (direct, debugging only) | Phase 1 |
-| order-service | `localhost:3002` (direct, debugging only) | Phase 1 |
+| Gateway | `localhost:3000` ← the only one a client should touch | ✅ runs locally |
+| restaurant-service | `localhost:3001` (direct, debugging only) | ✅ runs locally |
+| order-service | `localhost:3002` (direct, debugging only) | ✅ runs locally |
 | **restaurants-db** | **`localhost:5433`** | ✅ running |
 | **orders-db** | **`localhost:5434`** | ✅ running |
 | Kafka | `localhost:9092` from the host, `kafka:19092` from containers | Phase 3 |

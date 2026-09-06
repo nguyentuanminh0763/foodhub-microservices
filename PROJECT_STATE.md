@@ -1,20 +1,26 @@
 # FoodHub — Project State
 
-> **Last updated:** 2026-09-06 (tasks 1.1–1.4 done, all docs realigned)
-> **Overall:** 🔜 Phase 1, tasks 1.1–1.4 complete. Two Postgres containers running and healthy.
-> No application code exists yet — `main` is documentation plus `docker-compose.yml`.
+> **Last updated:** 2026-09-06 (three NestJS services scaffolded; gateway forwards, verified)
+> **Overall:** 🔜 Phase 1. Tasks 1.1–1.4 done. The **application skeleton** of 1.5–1.7 answers
+> `200` through the gateway — from three terminal processes, with **no database and no containers**
+> behind it yet.
 
 ## ▶ Next action
 
-**Task 1.5 — build `services/restaurant`:** a NestJS app exposing
-`GET /api/restaurants/health`, a `schema.prisma` describing `restaurants` and `dishes`, a first
-Prisma migration that creates those tables in `restaurants-db`, and a Dockerfile.
+Two pieces are still missing before 1.5–1.7 can be called done:
 
-Done when `curl http://localhost:3001/api/restaurants/health` answers **and** `\dt` inside
-`restaurants-db` lists two tables instead of "Did not find any relations".
+1. **Prisma in `services/restaurant`** — `schema.prisma` for `restaurants` + `dishes`, first
+   migration, `/health` reporting real DB connectivity. Then the same for `services/order`.
+   Done when `\dt` inside `restaurants-db` lists tables instead of "Did not find any relations".
+2. **Dockerfiles + compose wiring** for all three, so `docker compose up --build` reproduces what
+   currently only runs from three terminals. That is what makes `curl localhost:3000/...` the real
+   Phase 1 milestone rather than a local coincidence.
 
-Then 1.6 (`services/order`, same shape), 1.7 (gateway proxy — **ends Phase 1**), 1.8 (minimal CI).
-Full task table: `CLAUDE.md` → Phase 1, broken down.
+Three decisions are still **open** and were briefed but not answered: money as `Int` VND vs
+`Decimal`, `prisma migrate` vs `db push`, and whether the hand-written scaffold should be replaced
+by the full `nest new` layout. Current code assumes nothing about the first two.
+
+Then 1.8 (minimal CI). Full task table: `CLAUDE.md` → Phase 1, broken down.
 
 ---
 
@@ -25,8 +31,8 @@ Full task table: `CLAUDE.md` → Phase 1, broken down.
 | Name | FoodHub — food delivery as microservices |
 | Repo | `https://github.com/nguyentuanminh0763/foodhub-microservices` (`main`, pushed) |
 | Local path | `C:\Users\PC\Desktop\microservices\foodhub-microservices` |
-| Runtime | **Now:** Java 21 (Spring Boot 3.3) + Node 20 (Express). **Target:** TypeScript / Node 20 (NestJS 11) |
-| Key libraries | **Target:** NestJS, Prisma, `kafkajs`, `ioredis`, `@nestjs/axios` |
+| Runtime | Node 22.20 + TypeScript 5.9, NestJS 11 (Express 5). No Java or Express-only code left on `main` |
+| Key libraries | **In use:** `@nestjs/{common,core,platform-express}`. **Target:** Prisma, `kafkajs`, `ioredis`. The gateway uses **native `fetch`**, not `@nestjs/axios` |
 | Infra | Docker Compose. **Target:** Postgres 16 (one per service), Kafka 3.9 KRaft, Redis, Kafka UI |
 | Dev platform | Windows 11, Docker Desktop, **Git Bash** (not PowerShell — see trap #5). Git on drive D: |
 | User | Working developer. Strong in Node/Express, React/React Native, Spring Boot, MySQL, MongoDB, JWT. **Learning:** microservices, Kafka, Redis, NestJS, Postgres, CI/CD |
@@ -39,8 +45,9 @@ in the next 6–12 months.
 
 ## Current state
 
-`main` now holds **documentation only**. All application code was removed in task 1.3 and lives on
-the `legacy/spring` branch.
+`main` holds documentation plus three NestJS services that boot and answer `/health`. The Spring and
+Express code was removed in task 1.3 and lives on the `legacy/spring` branch. Nothing on `main`
+touches a database yet.
 
 | Component | State | Notes |
 |---|---|---|
@@ -51,9 +58,9 @@ the `legacy/spring` branch.
 | `restaurants-db` | ✅ Running, `foodhub_restaurants` auto-created, no tables yet | host `5433` → container `5432` |
 | `orders-db` | ✅ Running, `foodhub_orders` auto-created, no tables yet | host `5434` → container `5432` |
 | `.env` / `.env.example` | ✅ Rewritten for Postgres + Prisma | |
-| `services/gateway` | ⛔ Not created | Task 1.7 |
-| `services/restaurant` | ⛔ Not created | Task 1.5 |
-| `services/order` | ⛔ Not created | Task 1.6 |
+| `services/gateway` | 🟡 Runs, proxies, verified | `:3000`, forwards `/api/<service>/*`. No Dockerfile |
+| `services/restaurant` | 🟡 Runs, `/health` only | `:3001`. **No Prisma, no DB connection, no Dockerfile** |
+| `services/order` | 🟡 Runs, `/health` only | `:3002`. Same gaps |
 | `.github/workflows/ci.yml` | ⛔ Not created | Task 1.8 |
 
 ### On the `legacy/spring` branch
@@ -65,7 +72,55 @@ was deliberately left incomplete under the retired working mode.
 
 ---
 
-## Latest update — Legacy removed, databases running, docs realigned (2026-09-06)
+## Latest update — Three NestJS services scaffolded, gateway verified (2026-09-06)
+
+`main` now holds code again. Three services, hand-written rather than generated by `nest new`: no
+ESLint, Prettier or Jest until something needs them.
+
+| Service | Port | Files | What it does |
+|---|---|---|---|
+| `gateway` | 3000 | 6 | `@All(':service/*rest')` → `fetch` → downstream. Maps failures to status codes |
+| `restaurant` | 3001 | 6 | `GET /api/restaurants/health` |
+| `order` | 3002 | 6 | `GET /api/orders/health` |
+
+**Verified against running processes**, not just a build:
+
+| Check | Result |
+|---|---|
+| `curl :3001/api/restaurants/health` | `200 {"service":"restaurant","status":"ok",...}` |
+| `curl :3002/api/orders/health` | `200 {"service":"order",...}` |
+| `curl :3000/api/restaurants/health` | `200`, body produced by restaurant-service — **the Phase 1 shape** |
+| `curl :3000/api/orders/health` | `200` |
+| `curl :3000/api/drivers/health` | `404 Unknown service 'drivers'` — the gateway routing table, not a downstream error |
+| Kill restaurant-service, retry through the gateway | **`503 Upstream unreachable`**, while `/api/orders/health` still returned `200` |
+
+That last row is the gateway breakage exercise from `CLAUDE.md`, run early because the code claimed
+a status code that had never been executed. `503` — not `500` — because the gateway itself is
+healthy and the failure is downstream; a timeout would have produced `504` (5s, `AbortSignal.timeout`).
+The blast radius stopped at one route: orders was unaffected.
+
+**Decisions taken while writing this, all reversible:**
+
+- **Native `fetch`, not `@nestjs/axios`.** Node 22 ships it; two dependencies removed. Error
+  mapping stays explicit and visible, which a proxy library would hide — and the mapping is the
+  point of the exercise.
+- **`Map`, not an object literal, for the routing table.** `TARGETS['constructor']` on an object
+  literal resolves to `Object.prototype.constructor` and would have produced garbage instead of a
+  `404`.
+- **No Dockerfiles yet.** An unbuilt Dockerfile is an untested claim. They arrive together with the
+  compose wiring, in one change that can actually be run.
+
+**Fixed on the way:** deleted the last Spring leftovers (`services/auth-service/.idea` and
+`target/`, both untracked), dropped the Java section from `.gitignore`, removed trap #7 from
+`CLAUDE_RULES.md`, and corrected a README link pointing at `00_doi-huong-stack.md` — a filename that
+never existed on `main`.
+
+**Known gap:** `strict: true` is on in all three `tsconfig.json`, but `strictPropertyInitialization`
+is off. That is for the Prisma/DI code that comes next; revisit it if it starts hiding real bugs.
+
+---
+
+## Previous update — Legacy removed, databases running, docs realigned (2026-09-06)
 
 **Task 1.3** — pushed branch `legacy/spring`, deleted all Spring/Express code from `main`. The
 hand-written `AuthService.register/login` is preserved on that branch, not lost.
@@ -95,7 +150,7 @@ numbers, added payment-service to both diagrams, linked `BUSINESS_OVERVIEW.md`, 
 
 ---
 
-## Previous update — Stack pivot, new working mode, git identity (2026-09-06)
+## Earlier — Stack pivot, new working mode, git identity (2026-09-06)
 
 **Created:** `PROJECT_STATE.md`, `CLAUDE_RULES.md`, `docs/ai-journal/00_stack-pivot.md`
 **Rewritten:** `CLAUDE.md`, `README.md`, `../CLAUDE.md` (reduced to a stub)
@@ -127,8 +182,9 @@ No code was produced this session — deliberate. The next real verification is 
 
 | # | Issue | Severity | Notes |
 |---|---|---|---|
-| 1 | Nothing runs end to end after ~3 weeks | 🔴 High | Root cause was the old working mode; addressed this session |
-| 2 | `docker-compose.yml` and `.env.example` still hold legacy config | 🟠 Medium | Task 1.4 rewrites both. Until then `docker compose up` refers to services that no longer exist |
+| 1 | Nothing ran end to end after ~3 weeks | 🟠 Medium | Downgraded: three services now answer through the gateway. Still true *in containers* — `docker compose up` starts databases only |
+| 2 | ~~`docker-compose.yml` and `.env.example` hold legacy config~~ | ✅ Done | Task 1.4 rewrote both |
+| 7 | No test, no CI — nothing catches a regression | 🟠 Medium | Deliberate until task 1.8. The `503`/`504` mapping in the gateway is the first thing worth a test |
 | 3 | GPG public key not yet uploaded to GitHub | 🟢 Low | Until then commits stay *Unverified*. Cosmetic only — attribution already works |
 | 4 | `.env` holds real secrets, gitignored | 🟢 Low | Re-check before every push |
 | 5 | ~~Legacy Java/Express code on `main`~~ | ✅ Done | Task 1.3 — preserved on `legacy/spring`, removed from `main` |
@@ -138,6 +194,7 @@ No code was produced this session — deliberate. The next real verification is 
 
 ## Update history
 
+### 2026-09-06 — Gateway + restaurant + order scaffolded; `:3000` proxies, `503` on a dead upstream
 ### 2026-09-06 — Tasks 1.3–1.4: legacy removed, two Postgres running, docs realigned
 ### 2026-09-06 — Stack pivot, new working mode, git identity fixed
 ### 2026-08-16 — TicketFlow built as a separate NestJS + Kafka project (since abandoned)
