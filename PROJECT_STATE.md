@@ -35,8 +35,10 @@ the `legacy/spring` branch.
 | Git / GitHub | ✅ `main` and `legacy/spring` both pushed | |
 | Git identity | ✅ Fixed 2026-09-06 | Own GPG key `5359A8A8A6C4F69C`, noreply email, commits signed. Public key **still needs pasting into GitHub** for the Verified badge (cosmetic) |
 | Documentation | ✅ Rewritten for the target stack, all English | README, ARCHITECTURE, RUNNING, CLAUDE*, PROJECT_STATE, ai-journal |
-| `docker-compose.yml` | ⛔ Still the legacy file (MySQL ×2 + Mongo + 4 Spring/Express services) | Rewritten in task 1.4 |
-| `.env.example` | ⛔ Still legacy variables | Rewritten in task 1.4 |
+| `docker-compose.yml` | ✅ Two Postgres, both verified `healthy` | Task 1.4 done 2026-09-06 |
+| `restaurants-db` | ✅ Running, `foodhub_restaurants` auto-created, no tables yet | host `5433` → container `5432` |
+| `orders-db` | ✅ Running, `foodhub_orders` auto-created, no tables yet | host `5434` → container `5432` |
+| `.env` / `.env.example` | ✅ Rewritten for Postgres + Prisma | |
 | `services/gateway` | ⛔ Not created | Task 1.7 |
 | `services/restaurant` | ⛔ Not created | Task 1.5 |
 | `services/order` | ⛔ Not created | Task 1.6 |
