@@ -10,10 +10,19 @@
   thing that exists publicly. The move to NestJS is a transplant *into this repo*, not a new one.
   The project has already changed direction twice; a third time kills it.
 
-- **Kafka does NOT sit between gateway and services.** Kafka is an append-only log with no reply
-  semantics. Gateway → service is HTTP because the caller needs an answer *now*. Kafka goes where
-  the asynchronous event is: `order.created` → notification consumes. Forcing request/reply onto
-  Kafka (reply topics, correlation IDs) is slower and teaches the wrong mental model.
+- **Brief before deciding. Never write an architectural choice here as settled law.**
+  Added 2026-09-06 after doing exactly that: Kafka's phase, topics and placement were decided by
+  Claude and written into this file as rules, for a user who had said they did not yet know what
+  Kafka could do. See the BRIEF → DECIDE steps in `CLAUDE.md`. A decision the user did not make is a
+  decision they cannot defend in an interview, which is the whole point of the project.
+
+- **Kafka has no reply semantics** — that part is fact, not preference. It is an append-only log.
+  Anything that needs an answer *now* is HTTP. Forcing request/reply onto Kafka (reply topics,
+  correlation IDs) is slower and teaches the wrong mental model.
+
+  **Still open (user's call):** whether the gateway fire-and-forgets into Kafka (client gets `202`,
+  cannot be rejected synchronously) or calls order-service over HTTP (client gets `201` with the real
+  order). `docs/BUSINESS_OVERVIEW.md` is written assuming the second — confirm before building it.
 
 - **Database per service.** No service reads another's database — it calls the API. This is the
   biggest difference from a monolith and the source of most of the pain worth understanding.

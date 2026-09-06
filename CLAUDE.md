@@ -7,9 +7,15 @@ Repo: `https://github.com/nguyentuanminh0763/foodhub-microservices`
 
 ## Read first
 
-1. [`CLAUDE_RULES.md`](CLAUDE_RULES.md) — rules, real traps, risk threshold
-2. [`PROJECT_STATE.md`](PROJECT_STATE.md) — per-service state, open issues
-3. [`docs/ai-journal/`](docs/ai-journal/) — past decisions **and rejected options**
+1. [`docs/BUSINESS_OVERVIEW.md`](docs/BUSINESS_OVERVIEW.md) — **what the product actually is**, as one
+   concrete order from 19:30 to 19:50. Every technology traces to a line in it. Read this before
+   proposing anything architectural
+2. [`CLAUDE_RULES.md`](CLAUDE_RULES.md) — rules, real traps, risk threshold
+3. [`PROJECT_STATE.md`](PROJECT_STATE.md) — per-service state, open issues
+4. [`docs/ai-journal/`](docs/ai-journal/) — past decisions **and rejected options**
+
+**Scope: B** (decided 2026-09-06) — browse, order, pay, restaurant confirms, stops at "food ready".
+Delivery and driver tracking are scope C, deferred.
 
 > ⚠️ Mid-migration: **Spring Boot + Express → NestJS**. The Java/Express code still in the repo is
 > legacy awaiting deletion — do not build on it.
@@ -28,16 +34,30 @@ The learning target moved from *business logic* to *infrastructure* — Kafka, R
 NestJS, CI/CD. None of that lives in typed code. `producer.send()` is three lines; typing it teaches
 nothing about Kafka.
 
-### The loop: SHIP → BREAK → EXPLAIN
+### The loop: BRIEF → DECIDE → SHIP → BREAK → EXPLAIN
 
 | Step | Who | What |
 |---|---|---|
+| **BRIEF** | Claude | Explain what the tool can and cannot do, the options, and the tradeoffs — **before** any architectural choice is made |
+| **DECIDE** | **User** | Choose. Claude states a recommendation and its reasoning, then waits |
 | **SHIP** | Claude | Write it, run it, verify it |
 | **BREAK** | User | Run the phase's mandatory failure exercise |
 | **EXPLAIN** | User | Write `docs/ai-journal/<topic>.md`: what broke, what the logs said, why the system behaved that way, how to answer it in an interview |
 
-Claude does step 1 and **prepares the script for step 2** — exact commands, what to watch, what
-should happen. Step 3 is the user's; it is the one part that cannot be outsourced.
+**BRIEF and DECIDE were added 2026-09-06 after a real failure.** Claude had decided Kafka's phase,
+its topics, and its placement, then written all of it into `CLAUDE_RULES.md` as settled law — for a
+user who had said outright they did not yet know what Kafka could do. Vibe code had quietly become
+"Claude designs the architecture, the user watches."
+
+That breaks the entire point of the project: **you cannot defend a decision in an interview that you
+neither understood nor made.**
+
+The rule that follows: **any decision that shapes the architecture gets a BRIEF first, and the user
+decides.** Never write an architectural choice into a rules file as if settled. Implementation
+details inside an already-made decision do not need this — that is what vibe code is for.
+
+Claude does SHIP and **prepares the script for BREAK** — exact commands, what to watch, what should
+happen. EXPLAIN is the user's; it is the one part that cannot be outsourced.
 
 `LEARNING_LOG.md` is retired in favour of `docs/ai-journal/`. It sat empty for three weeks because
 it asked the user to invent content; a journal always has a real incident to describe.
@@ -123,11 +143,13 @@ when the copies drift. That is the distributed-contract lesson, not a design fla
 |---|---|---|
 | **0** ✅ | Docs + new working rules | `PROJECT_STATE.md`, `CLAUDE_RULES.md`, journal exist |
 | **1** ← **current** | Git identity → rewrite outer docs → delete legacy → compose → 2 services → gateway → minimal CI | `curl localhost:3000/api/restaurants/health` answers through the gateway |
-| **2** | Real data: restaurants, dishes, orders + **sync HTTP** order→restaurant | An order is placed with a price read from restaurant-service |
-| **3** | **Kafka**: order publishes `order.created`, notification consumes | All six experiments in `docs/KAFKA.md` are run |
-| **4** | **Redis**: contention on the last portion → atomic ops / locking, consumer idempotency | 100 concurrent requests, one portion, zero oversell |
-| **5** | JWT at the gateway, identity propagation, full CI/CD | |
-| **6** | Operations: two order-service instances, consumer group splits partitions | |
+| **2** | Real data: restaurants, dishes, orders + **sync HTTP** order→restaurant | Order #123 exists with a price read from restaurant-service, not from the client |
+| **3** | **Kafka**: order publishes `order.created`, notification-service consumes | All six experiments in `docs/KAFKA.md` are run |
+| **4** | **payment-service**: second independent consumer of `order.created`, publishes `payment.succeeded` | Two consumer groups on one topic — the actual justification for Kafka |
+| **5** | **Redis**: contention on the last portion → atomic ops / locking, consumer idempotency | 100 concurrent requests, one portion, zero oversell |
+| **6** | JWT at the gateway, identity propagation, full CI/CD | |
+| **7** | Operations: two order-service instances, consumer group splits partitions | |
+| *future* | **Scope C** — driver assignment, live location, delivery | Only after the above works |
 
 ### Phase 1, broken down
 
