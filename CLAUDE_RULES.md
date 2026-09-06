@@ -185,13 +185,9 @@ docker compose config
 Every `${...}` must be a real value. Empty values mean `.env` is missing or malformed — not a
 service bug.
 
-### 7. (Legacy Java — delete this entry once Spring is gone)
-
-Spring Boot 3.3 does **not** run on JDK 25; Byte Buddy / Hibernate cannot read Java 25 class files.
-Exact error: `Java 25 (69) is not supported`. The project targeted Java 21.
-
-Also legacy: MySQL JDBC needs `?allowPublicKeyRetrieval=true&useSSL=false`, and `@CreatedDate`
-requires `@EnableJpaAuditing` somewhere or `createdAt` is always NULL.
+> Trap #7 was the Java/Maven/MySQL entry. Deleted 2026-09-06 once the last Spring leftovers
+> (`services/auth-service/.idea`, `target/`) were removed from disk — it warned about a stack this
+> repo no longer has. Still on the `legacy/spring` branch if it is ever needed.
 
 ---
 

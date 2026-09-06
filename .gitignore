@@ -1,6 +1,3 @@
-# Java / Maven
-target/
-*.class
 # Node
 node_modules/
 npm-debug.log*
