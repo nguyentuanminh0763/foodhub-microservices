@@ -220,8 +220,47 @@ One large change = one commit. Do not fold legacy deletion into a feature commit
 
 **After:**
 1. **Run it for real** — not "it has no syntax errors"
-2. Update `PROJECT_STATE.md` **in the same change**, not later
+2. **Sync every doc the change invalidated** — see the table below. Same commit, not later
 3. Add `docs/ai-journal/<topic>.md` if there was a decision or a bug worth remembering
+
+### Doc sync — which change breaks which file
+
+Added 2026-09-06 after the user asked *"have the docs been updated, or are you diving into code?"* —
+and they had not been. Three decisions that day (scope B, synchronous order entry, the corrected
+skill profile) all landed **after** README and ARCHITECTURE were written, leaving both confidently
+wrong. `CLAUDE.md` was still warning about Java code that task 1.3 had already deleted.
+
+**This failure is silent.** Stale docs do not error, do not fail a test, and read as authoritative.
+The only defence is a mechanical check.
+
+| What changed | Files that just went stale |
+|---|---|
+| An architectural decision | `README.md` (diagram, stack), `docs/ARCHITECTURE.md`, `CLAUDE.md`, **plus a new journal entry** |
+| Scope (what the product does) | `docs/BUSINESS_OVERVIEW.md` first, then README and ARCHITECTURE |
+| A phase moved or renumbered | **Every** phase reference in every file — grep, do not trust memory |
+| A service added or removed | README diagram + ports + repo structure, ARCHITECTURE services, RUNNING ports, `docker-compose.yml` |
+| A port changed | README ports, RUNNING ports, `docker-compose.yml`, `.env.example` |
+| Something started or stopped working | `PROJECT_STATE.md` state table **and** the README status block |
+| A new trap was hit | `CLAUDE_RULES.md` traps **and** the RUNNING troubleshooting table |
+
+### Verification before committing a decision
+
+Grep rather than remember. Adjust the terms to what changed:
+
+```bash
+grep -rn "Phase [0-9]" *.md docs/*.md | grep -iE "redis|jwt|kafka|payment|auth"
+```
+
+```bash
+grep -rn "localhost:[0-9]" *.md docs/*.md
+```
+
+Two questions that catch most of it:
+
+1. **Does any doc still describe something that no longer exists?** Deleted code, a renamed service,
+   an old port, a phase that moved.
+2. **Does any doc still describe a decision that was reversed?** Reversals are the worst case — the
+   file reads as authoritative and argues for the option that lost.
 
 ---
 
