@@ -20,9 +20,17 @@
   Anything that needs an answer *now* is HTTP. Forcing request/reply onto Kafka (reply topics,
   correlation IDs) is slower and teaches the wrong mental model.
 
-  **Still open (user's call):** whether the gateway fire-and-forgets into Kafka (client gets `202`,
-  cannot be rejected synchronously) or calls order-service over HTTP (client gets `201` with the real
-  order). `docs/BUSINESS_OVERVIEW.md` is written assuming the second — confirm before building it.
+  **Decided by the user 2026-09-06: the gateway calls order-service over HTTP**, and order-service
+  publishes `order.created` after committing to Postgres. The client gets `201` with the real order
+  and an out-of-stock `409` arrives while they are still on the cart screen. The rejected
+  alternative — gateway emits into Kafka, client gets `202` — and the reasoning are in
+  `docs/ai-journal/01_order-entry-sync-vs-async.md`. Do not reopen without load numbers.
+
+  Two consequences that are now rules:
+  - **The gateway is a dumb proxy.** It routes, forwards, and maps downstream failures to status
+    codes. It does not know what an order is.
+  - **Publish only after the write commits.** `order.created` goes to Kafka *after* the order is
+    saved, never before — otherwise a consumer can act on an order that failed to persist.
 
 - **Database per service.** No service reads another's database — it calls the API. This is the
   biggest difference from a monolith and the source of most of the pain worth understanding.
