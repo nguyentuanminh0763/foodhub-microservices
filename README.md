@@ -1,116 +1,153 @@
-# FoodHub — Microservices Learning Project
+# FoodHub — Food Delivery, as Microservices
 
-A **food-ordering / delivery** platform built with a **microservices architecture**.
-This is a personal learning project: the goal is to understand microservices and DevOps
-patterns deeply enough to **explain and defend every decision in a job interview** — not
-just to make it run.
+A food-ordering platform built as **NestJS microservices** with Postgres, Kafka and Redis.
 
-> Working method, pacing, and the rule that *I write the core logic myself* live in
-> [`CLAUDE.md`](./CLAUDE.md). Read that first.
+Personal learning project. The goal is to understand microservices and the infrastructure
+around them deeply enough to **defend every decision in an interview** — not just to make it run.
+
+> **Status: Phase 1, in progress. Nothing runs end to end yet.**
+> Honest per-service state lives in [`PROJECT_STATE.md`](./PROJECT_STATE.md).
+> This README describes the **target**; do not assume anything below is working today.
 
 ---
 
-## Description
-
-FoodHub lets a customer browse restaurants, place an order, pay, and get notified about the
-order status. Behind the scenes the system is split into independent services that each own
-one business responsibility and one database, communicating over a mix of synchronous REST
-and asynchronous messaging.
-
-This domain is a good microservices teaching case because the split has *real* justification:
-payment must be isolated, notifications are naturally asynchronous, and the catalog (restaurants)
-and orders scale differently.
-
-## Architecture (overview)
+## Architecture
 
 ```
-                         +--------------+
-        Client  ───────▶ |  API Gateway |   routing + JWT auth
-     (Mobile/Web)        +------+-------+
-                                | sync REST (through gateway)
-        +---------------+-------+-------+----------------+
-        ▼               ▼               ▼                ▼
-   +---------+    +-----------+   +----------+    +-----------+
-   |  Auth   |    |Restaurant |   |  Order   |    |  Payment  |
-   | Spring  |    |  Node.js  |   |  Spring  |    |  Spring   |
-   |  MySQL  |    |  MongoDB  |   |  MySQL   |    |Stripe/PayOS
-   +---------+    +-----------+   +----+-----+    +-----+-----+
-                                      | publish        | publish
-                                      ▼                ▼
-                                +--------------------------+
-                                |        RabbitMQ          |  async event bus
-                                |  OrderPlaced / Paid      |
-                                +-----------+--------------+
-                                            | consume
-                                            ▼
-                                   +------------------+
-                                   |   Notification   |  Node.js + Firebase
-                                   +------------------+
+                          ┌──────────────┐
+        Client  ────────▶ │   Gateway    │  :3000   the only public door
+                          └──────┬───────┘          JWT + rate limit (Phase 5)
+                     HTTP        │        HTTP
+             ┌───────────────────┴───────────────────┐
+             ▼                                       ▼
+   ┌─────────────────────┐               ┌─────────────────────┐
+   │ restaurant-service  │               │   order-service     │
+   │       :3001         │◀── HTTP ──────│       :3002         │
+   │   restaurants-db    │               │     orders-db       │
+   └─────────────────────┘               └──────────┬──────────┘
+                                                    │ publish
+                                                    ▼
+                                          ┌───────────────────┐
+                                          │      Kafka        │  order.created
+                                          └─────────┬─────────┘
+                                                    │ consume
+                                                    ▼
+                                        ┌───────────────────────┐
+                                        │ notification-service  │  Phase 3
+                                        └───────────────────────┘
 ```
 
-See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full explanation of each service
-and the two communication styles.
+**Two communication styles, deliberately:**
+
+- **Synchronous (HTTP)** — order asks restaurant *"does this dish exist, what does it cost?"*
+  and blocks. There is no way to continue without the answer. The cost is **temporal coupling**:
+  if restaurant-service is down, order-service is down too.
+- **Asynchronous (Kafka)** — order saves, publishes `order.created`, returns immediately.
+  Consumers react later. The publisher does not know who is listening. The cost is
+  **eventual consistency**.
+
+**Never trust a price sent by the client.** The order service always re-reads the price from
+restaurant-service. This is the reason the sync call exists at all.
+
+Full reasoning, including where each choice is a trade rather than an upgrade:
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
 ## Tech stack
 
-| Layer            | Technology                                              |
-|------------------|---------------------------------------------------------|
-| API Gateway      | Spring Cloud Gateway                                    |
-| Auth service     | Spring Boot, Spring Security, JWT, MySQL                |
-| Restaurant svc   | Node.js, Express, MongoDB (Mongoose)                    |
-| Order service    | Spring Boot, MySQL, RestTemplate/WebClient (sync calls) |
-| Payment service  | Spring Boot, Stripe / PayOS  *(Phase 2)*                |
-| Notification svc | Node.js, Express, Firebase  *(Phase 2)*                 |
-| Messaging        | RabbitMQ  *(Phase 2)*                                   |
-| Containerization | Docker, Docker Compose                                  |
-| CI/CD            | GitHub Actions  *(Phase 3)*                             |
-| Deploy           | VPS + Nginx, or Kubernetes  *(Phase 4)*                 |
+| Layer | Technology |
+|---|---|
+| Gateway | NestJS 11, `@nestjs/axios` |
+| Services | NestJS 11, TypeScript |
+| ORM | Prisma — one `schema.prisma` and one database per service |
+| Database | PostgreSQL 16 — **one per service** |
+| Messaging | Kafka 3.9 (KRaft, no ZooKeeper) via `kafkajs` |
+| Cache / locking | Redis *(Phase 4)* |
+| Validation | `class-validator` + global `ValidationPipe` |
+| Infrastructure | Docker Compose |
+| CI/CD | GitHub Actions |
 
-## Communication styles (the core lesson)
+Two deliberate choices worth naming:
 
-- **Synchronous (REST):** Order calls Restaurant to verify a dish exists and get its price.
-  The caller blocks and waits for the response. Use when you need an answer *now*.
-- **Asynchronous (RabbitMQ):** Order finishes, publishes an `OrderPlaced` event, and returns to
-  the user immediately. Notification listens and reacts later. The publisher does not know who
-  consumes. Use for side effects that can happen *after* and must not block the user.
+- **`kafkajs` directly, not `@nestjs/microservices`.** The Nest wrapper hides topics, partitions,
+  offsets and consumer groups — which are exactly the four concepts being learned here.
+- **No shared package, no `shared/` folder.** Every service has its own `package.json` and is
+  independently deployable. When two services need the same shape, it gets copied. The pain of
+  keeping two copies in sync *is* the lesson about distributed contracts, not an oversight.
+
+## Ports
+
+| What | Where |
+|---|---|
+| Gateway | `localhost:3000` ← the only one a client should touch |
+| restaurant-service | `localhost:3001` (direct access, debugging only) |
+| order-service | `localhost:3002` (direct access, debugging only) |
+| restaurants-db | `localhost:5433` |
+| orders-db | `localhost:5434` |
+| Kafka broker | `localhost:9092` from the host, `kafka:19092` from containers *(Phase 3)* |
+| Kafka UI | `localhost:8080` *(Phase 3)* |
+
+## Getting started
+
+```bash
+cp .env.example .env
+```
+
+```bash
+docker compose up --build
+```
+
+Then the command that defines "the environment works":
+
+```bash
+curl http://localhost:3000/api/restaurants/health
+```
+
+One answer, from a container that is not the gateway, through one door. That is Phase 1 done.
+
+Full instructions and troubleshooting: [`docs/RUNNING.md`](./docs/RUNNING.md).
 
 ## Roadmap
 
-| Phase | Goal | Outcome |
-|-------|------|---------|
-| **1** | Core services run | Auth + Restaurant + Order + Gateway, all sync REST, DB-per-service, one `docker compose up` brings everything up |
-| **2** | Event-driven | Add RabbitMQ + Payment + Notification; Order publishes events, Notification consumes |
-| **3** | CI/CD | GitHub Actions: lint/test, build a Docker image per service, push to registry |
-| **4** | Real deploy | VPS + docker-compose + Nginx, or Kubernetes basics |
-| **5** | Polish | Service discovery (Eureka), central config, distributed tracing (Zipkin) |
+| Phase | Goal |
+|---|---|
+| **1** ← current | Walking skeleton — compose up works, gateway forwards to both services, no business logic |
+| **2** | Real data — restaurants, dishes, orders, plus the sync HTTP call between services |
+| **3** | **Kafka** — publish `order.created`, consume it, then break it on purpose |
+| **4** | **Redis** — two customers, one last portion. Atomic ops, distributed locking, consumer idempotency |
+| **5** | JWT at the gateway, identity propagation, full CI/CD |
+| **6** | Operations — run two order-service instances, watch the consumer group split partitions |
+
+**On adding technology:** a tool enters this repo only when it answers a problem the project has
+actually hit. Redis arrives in Phase 4 because that is when overselling shows up, not before.
+gRPC, GraphQL, Elasticsearch and Kubernetes are out of scope until the roadmap changes first.
 
 ## Repository structure
 
 ```
 foodhub-microservices/
-├── README.md                 # this file
-├── CLAUDE.md                 # working agreement for Claude Code (read first)
-├── LEARNING_LOG.md           # session-by-session learning notes
-├── docker-compose.yml        # Phase 1 orchestration (Phase 2 services commented)
-├── .env.example              # copy to .env and fill in
+├── docker-compose.yml
+├── .github/workflows/ci.yml
 ├── docs/
-│   └── ARCHITECTURE.md       # detailed architecture + decisions
-├── gateway/                  # Spring Cloud Gateway
+│   ├── ARCHITECTURE.md      # why each split exists, and when a monolith would be better
+│   ├── RUNNING.md           # the three feedback loops
+│   └── ai-journal/          # decision log — including options that were rejected
 └── services/
-    ├── auth-service/         # Spring Boot + MySQL
-    ├── restaurant-service/   # Node.js + MongoDB
-    ├── order-service/        # Spring Boot + MySQL
-    ├── payment-service/      # Phase 2
-    └── notification-service/ # Phase 2
+    ├── gateway/             # :3000
+    ├── restaurant/          # :3001 + restaurants-db
+    └── order/               # :3002 + orders-db
 ```
 
-## Getting started (Phase 1)
+`payment/` and `notification/` are deliberately absent until Phase 3. A folder containing only an
+empty README teaches the reader that the folder is decorative.
 
-1. `cp .env.example .env` and fill in the values.
-2. Implement the Phase 1 services one at a time (see each service's `README.md` and the
-   `TODO (YOU CODE THIS)` markers in the source — that's where you write the logic).
-3. `docker compose up --build` to bring the system up.
-4. Verify each service's `GET /health` endpoint responds, then test through the gateway.
+## A note on history
 
-> Each `TODO (YOU CODE THIS)` block is a spot where *you* write the core logic. Plumbing
-> (Dockerfiles, build config, bootstrap) is already filled in.
+This project began as Spring Boot + Express with MySQL, MongoDB and RabbitMQ. It was migrated to
+NestJS + Postgres + Kafka in September 2026 to match the infrastructure actually worth learning.
+The original stack is preserved on the `legacy/spring` branch. The migration reasoning is in
+[`docs/ai-journal/00_doi-huong-stack.md`](./docs/ai-journal/00_doi-huong-stack.md).
+
+---
+
+Working agreement for AI-assisted sessions: [`CLAUDE.md`](./CLAUDE.md) ·
+Rules and known traps: [`CLAUDE_RULES.md`](./CLAUDE_RULES.md)

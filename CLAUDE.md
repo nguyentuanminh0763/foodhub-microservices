@@ -1,121 +1,199 @@
-# CLAUDE.md — FoodHub Microservices (Learning Project)
+# CLAUDE.md — FoodHub
 
-> Project context and working agreement for Claude Code. Read this first every session.
+Food delivery platform as microservices. Learning project: the goal is to **defend every technical
+decision in an interview**, not to ship a product.
 
-## 1. What this project is
+Repo: `https://github.com/nguyentuanminh0763/foodhub-microservices`
 
-A **food-ordering / delivery** platform built as a **microservices system**. It is a
-**personal learning project** whose primary goal is for me (the developer) to *understand*
-microservices and DevOps patterns deeply enough to **defend every decision in a job interview** —
-not just to make it run.
+## Read first
 
-Tech I already know and am reusing here: React / React Native, Node.js/Express, Spring Boot/Java,
-MongoDB, MySQL, JWT, Google OAuth, Stripe/PayOS, Firebase, WebSocket.
+1. [`CLAUDE_RULES.md`](CLAUDE_RULES.md) — rules, real traps, risk threshold
+2. [`PROJECT_STATE.md`](PROJECT_STATE.md) — per-service state, open issues
+3. [`docs/ai-journal/`](docs/ai-journal/) — past decisions **and rejected options**
 
-New things I am here to learn: container orchestration (Docker Compose, later Kubernetes),
-inter-service communication (sync REST + async messaging), database-per-service, API gateway,
-CI/CD, and the *tradeoffs* of microservices vs monolith.
+> ⚠️ Mid-migration: **Spring Boot + Express → NestJS**. The Java/Express code still in the repo is
+> legacy awaiting deletion — do not build on it.
 
-## 2. Working agreement (IMPORTANT — how Claude Code should behave)
+---
 
-I am learning in **hands-on mode**: **I write the core business logic myself. Claude Code does NOT
-write it for me.**
+## Working agreement — CHANGED 2026-09-06
 
-Claude Code's role on this project:
-- **Scaffold the plumbing fully**: folder skeletons, Dockerfiles, `docker-compose.yml`, dependency
-  setup, config files, boilerplate. Go ahead and generate these completely.
-- **Act as a senior reviewer** of code *I* wrote. When I paste my code and ask for review, point out
-  bugs, non-idiomatic patterns, and what would break in production. Be honest and specific.
-- **Explain concepts and give minimal examples** when I'm stuck — a small illustrative snippet, NOT a
-  full implementation of the feature.
-- **Write tests** for logic I wrote, when I ask.
+The old mode (fill-in-the-blank: *the user writes the business logic, Claude does not*) is **dead**.
+Evidence and reasoning: [`docs/ai-journal/00_stack-pivot.md`](docs/ai-journal/00_stack-pivot.md).
 
-What Claude Code should NOT do unless I explicitly ask:
-- Do NOT write the controllers/route handlers, event publish/consume logic, gateway routing rules, or
-  service-to-service calls. Those are mine to write — that's where the learning is.
-- When I'm stuck, default to explaining or showing a tiny example, not handing me the finished feature.
-- Before writing any code, show your plan and explain *why* first, then wait.
+**Current mode: vibe code.** Claude writes all the code, complete. **No `// FILL:` markers, no
+`.todo` files.**
 
-### My learning loop (per concept)
-1. **Pre-read** — discuss the pattern in the chat app first (what problem, how it works, likely
-   interview questions).
-2. **Build** — I write the core logic; Claude Code scaffolds plumbing and reviews.
-3. **Reflect** — I add 3–4 lines to `LEARNING_LOG.md`: what I built, why it works, what I'd say in an
-   interview, what still confuses me. The "still confuses me" items become the next pre-read.
+The learning target moved from *business logic* to *infrastructure* — Kafka, Redis, Postgres,
+NestJS, CI/CD. None of that lives in typed code. `producer.send()` is three lines; typing it teaches
+nothing about Kafka.
 
-### Tool split
-- **Claude.ai chat** = lecture hall: concepts, architecture decisions, interview prep.
-- **Claude Code** = lab: implementation, running, debugging.
+### The loop: SHIP → BREAK → EXPLAIN
 
-### Pace
-One service or one pattern per session. Never build a whole phase in one shot.
+| Step | Who | What |
+|---|---|---|
+| **SHIP** | Claude | Write it, run it, verify it |
+| **BREAK** | User | Run the phase's mandatory failure exercise |
+| **EXPLAIN** | User | Write `docs/ai-journal/<topic>.md`: what broke, what the logs said, why the system behaved that way, how to answer it in an interview |
 
-## 3. Architecture
+Claude does step 1 and **prepares the script for step 2** — exact commands, what to watch, what
+should happen. Step 3 is the user's; it is the one part that cannot be outsourced.
 
-Polyglot, event-driven. Each service owns its own database (database-per-service — no service reads
-another service's DB directly; it must call the API).
+`LEARNING_LOG.md` is retired in favour of `docs/ai-journal/`. It sat empty for three weeks because
+it asked the user to invent content; a journal always has a real incident to describe.
+
+### Mandatory breakage exercises
+
+| Tech | Break this | Must be able to answer |
+|---|---|---|
+| Gateway | `docker compose stop restaurant` then call it | Which status code? How do 500/502/503/504 differ? |
+| Postgres | Kill the DB while a service is running | Does the service die or survive? What does the connection pool do? |
+| Sync HTTP | Make the downstream hang for 60s | What happens to the gateway under 100 concurrent requests? (cascading failure) |
+| Kafka | Kill a consumer mid-batch, before offset commit | Why is the message redelivered? Why is idempotency mandatory? |
+| Kafka | 3 partitions, 4 consumers in one group | Why does the 4th sit idle? |
+| Kafka | Read from offset 0 after consuming everything | Why can a queue not do this? |
+| Redis | 100 concurrent requests for the last portion | How many oversells without Redis? What mechanism stops it? |
+| CI/CD | Push a commit that fails a test | Where does the pipeline stop, and how fast do you find out? |
+
+---
+
+## Target architecture
 
 ```
-                         ┌──────────────┐
-        Client  ───────▶ │  API Gateway │   routing + JWT auth
-     (Mobile/Web)        └──────┬───────┘
-                                │  (sync REST through gateway)
-        ┌───────────────┬───────┴───────┬────────────────┐
-        ▼               ▼               ▼                ▼
-   ┌─────────┐    ┌───────────┐   ┌──────────┐    ┌───────────┐
-   │  Auth   │    │ Restaurant│   │  Order   │    │  Payment  │
-   │ Spring  │    │  Node.js  │   │  Spring  │    │  Spring   │
-   │  MySQL  │    │  MongoDB  │   │  MySQL   │    │ Stripe/PayOS
-   └─────────┘    └───────────┘   └────┬─────┘    └─────┬─────┘
-                                       │ publish        │ publish
-                                       ▼                ▼
-                                 ┌────────────────────────┐
-                                 │       RabbitMQ          │  async event bus
-                                 │  (OrderPlaced, Paid)    │
-                                 └───────────┬────────────┘
-                                             │ consume
-                                             ▼
-                                    ┌──────────────────┐
-                                    │   Notification   │  Node.js + Firebase
-                                    │ (notify customer │
-                                    │  + restaurant)   │
-                                    └──────────────────┘
+                          ┌──────────────┐
+        Client  ────────▶ │   Gateway    │  :3000   only public door
+                          └──────┬───────┘          JWT + rate limit (Phase 5)
+                     HTTP        │        HTTP
+             ┌───────────────────┴───────────────────┐
+             ▼                                       ▼
+   ┌─────────────────────┐               ┌─────────────────────┐
+   │ restaurant-service  │               │   order-service     │
+   │       :3001         │◀── HTTP ──────│       :3002         │  sync: real dish? real price?
+   │   restaurants-db    │               │     orders-db       │
+   └─────────────────────┘               └──────────┬──────────┘
+                                                    │ publish (Phase 3)
+                                                    ▼
+                                          ┌───────────────────┐
+                                          │      Kafka        │  order.created
+                                          └─────────┬─────────┘
+                                                    ▼
+                                        ┌───────────────────────┐
+                                        │ notification-service  │  (Phase 3)
+                                        └───────────────────────┘
 ```
 
-### Services
-- **API Gateway** (Spring Cloud Gateway) — single entry point, routes to services, validates JWT.
-- **Auth Service** (Spring Boot + MySQL) — register/login, JWT issuance, roles (customer / restaurant / admin).
-- **Restaurant Service** (Node.js + MongoDB) — restaurants, menus, dishes, availability. (Catalog analog.)
-- **Order Service** (Spring Boot + MySQL) — creates orders, calls Restaurant Service (sync REST) to
-  check dish availability/price, then publishes an `OrderPlaced` event.
-- **Payment Service** (Spring Boot + Stripe/PayOS) — handles payment, publishes `PaymentConfirmed`.
-- **Notification Service** (Node.js + Firebase) — consumes events, notifies customer and restaurant.
+- **Sync (HTTP)** — order asks restaurant *"does this dish exist, what does it cost?"* and blocks.
+  Cost: **temporal coupling** — restaurant down means order down. Timeouts, retries and circuit
+  breakers shrink the blast radius; they do not remove the dependency.
+- **Async (Kafka)** — order saves, publishes `order.created`, returns. Cost: **eventual consistency**.
+- **Never trust a price from the client.** Always re-read it from restaurant-service.
 
-### Two communication styles (the core lesson)
-- **Sync (REST)**: Order → Restaurant to check availability. Caller waits for the response.
-- **Async (RabbitMQ)**: Order finishes and *publishes* `OrderPlaced`, then returns to the user
-  immediately. Notification listens and reacts later. Order doesn't know Notification exists.
+## Stack
 
-> Interview north star: be able to whiteboard this from memory AND explain *why each split exists* —
-> including when a monolith would have been the better choice.
+| Layer | Choice |
+|---|---|
+| Gateway / services | NestJS 11, TypeScript |
+| ORM | **Prisma** — one `schema.prisma` + one DB per service |
+| Database | PostgreSQL 16 — one per service |
+| Messaging | Kafka 3.9 (KRaft) via **`kafkajs`** directly |
+| Cache / locking | Redis (Phase 4) |
+| Validation | `class-validator` + global `ValidationPipe` |
+| Infra / CI | Docker Compose, GitHub Actions |
 
-## 4. Roadmap (phased — each phase is shippable)
+### Four decisions locked in (2026-09-06)
 
-- **Phase 1 — Core runs (~1–2 weeks).** Auth + Restaurant + Order + Gateway. All sync REST,
-  database-per-service. Everything in `docker-compose.yml`. Goal: `docker compose up` brings the
-  whole system up.
-- **Phase 2 — Event-driven (~1 week). The real microservices lesson.** Add RabbitMQ + Payment +
-  Notification. Order publishes events; Notification consumes them.
-- **Phase 3 — CI/CD (~few days).** GitHub Actions: on push, run lint/tests, build a Docker image per
-  service, push to a registry (GHCR or Docker Hub).
-- **Phase 4 — Real deploy (stretch).** Deploy to a VPS via docker-compose + Nginx reverse proxy. OR
-  learn Kubernetes basics (minikube → managed cluster).
-- **Phase 5 — Polish (stretch).** Service discovery (Eureka), centralized config (Spring Cloud
-  Config), distributed tracing (Zipkin). Optional new service: Delivery/Driver.
+| Decision | Choice | Why |
+|---|---|---|
+| ORM | **Prisma**, not TypeORM | Real migrations, real type safety, better represented in current Node job ads |
+| Repo layout | **One `package.json` per service**, no workspaces | Honest to microservices: independent deploys, simple Dockerfiles. Sharing DTOs is the lesson, not a nuisance to engineer away |
+| Auth | **Deferred to Phase 5** | Phases 1–4 work without it. Deciding now is guessing |
+| Legacy code | **Branch `legacy/spring`, then delete from `main`** | Old code stays visible on GitHub, `main` stays clean, and the migration story has evidence |
 
-## 5. Conventions
-- Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`.
-- One service = one folder = its own Dockerfile + own database.
-- Each service exposes a `/health` endpoint.
-- Keep `LEARNING_LOG.md` updated at the end of every session.
-- Current phase: **Phase 1**.
+`kafkajs` directly rather than `@nestjs/microservices`: the Nest wrapper hides topics, partitions,
+offsets and consumer groups — the four concepts being learned.
+
+No `shared/` folder. When two services need the same shape, **copy it**, then journal what happens
+when the copies drift. That is the distributed-contract lesson, not a design flaw.
+
+---
+
+## Roadmap
+
+| Phase | Goal | Done when |
+|---|---|---|
+| **0** ✅ | Docs + new working rules | `PROJECT_STATE.md`, `CLAUDE_RULES.md`, journal exist |
+| **1** ← **current** | Git identity → rewrite outer docs → delete legacy → compose → 2 services → gateway → minimal CI | `curl localhost:3000/api/restaurants/health` answers through the gateway |
+| **2** | Real data: restaurants, dishes, orders + **sync HTTP** order→restaurant | An order is placed with a price read from restaurant-service |
+| **3** | **Kafka**: order publishes `order.created`, notification consumes | All six experiments in `docs/KAFKA.md` are run |
+| **4** | **Redis**: contention on the last portion → atomic ops / locking, consumer idempotency | 100 concurrent requests, one portion, zero oversell |
+| **5** | JWT at the gateway, identity propagation, full CI/CD | |
+| **6** | Operations: two order-service instances, consumer group splits partitions | |
+
+### Phase 1, broken down
+
+One task per sitting. Commit each one separately.
+
+| # | Task | Done when |
+|---|---|---|
+| 1.1 | Fix git identity (trap #4) | ✅ Own GPG key `5359A8A8A6C4F69C`, noreply email configured |
+| 1.2 | Rewrite outer docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/RUNNING.md` | No mention of Spring / Maven / IntelliJ remains |
+| 1.3 | Push `legacy/spring`, delete Java/Express from `main` | `services/` empty, separate `refactor:` commit |
+| 1.4 | `docker-compose.yml`: 2 Postgres + healthchecks, **no services yet** | `docker compose up -d` → both DBs healthy |
+| 1.5 | `services/restaurant`: NestJS + Prisma + `/health` + Dockerfile | `curl localhost:3001/api/restaurants/health` |
+| 1.6 | `services/order`: same | `curl localhost:3002/api/orders/health` |
+| 1.7 | `services/gateway`: proxy to both | `curl localhost:3000/api/restaurants/health` ← **Phase 1 done** |
+| 1.8 | `.github/workflows/ci.yml`, minimal | Push → CI green |
+
+1.4 is split from 1.5 on purpose: stand up the databases, confirm the healthchecks, *then* plug
+services in. When it breaks you know which layer.
+
+### Target layout
+
+```
+foodhub-microservices/
+├── docker-compose.yml
+├── README.md · CLAUDE.md · CLAUDE_RULES.md · PROJECT_STATE.md
+├── .github/workflows/ci.yml
+├── docs/
+│   ├── ARCHITECTURE.md · RUNNING.md
+│   ├── KAFKA.md                     ← Phase 3
+│   └── ai-journal/
+└── services/
+    ├── gateway/       :3000
+    ├── restaurant/    :3001 + restaurants-db :5433
+    └── order/         :3002 + orders-db :5434
+```
+
+No `payment/` or `notification/` until **Phase 3**. A folder holding only an empty README is debt,
+and it teaches the reader that the folder is decorative.
+
+**Still open:** where auth lives — its own service, or inside the gateway. Decide in Phase 5 and
+journal the reason.
+
+### Rule on adding technology
+
+A tool enters only when it answers a problem the project has actually hit. This is the one rule kept
+intact from the old agreement, because it is correct. Redis arrives in Phase 4 because that is when
+overselling appears. gRPC / GraphQL / Elasticsearch / Kubernetes are out of scope until this roadmap
+changes first.
+
+**Claude must push back** on pulling a later phase forward while an earlier one does not run.
+
+---
+
+## Quick reminders
+
+- The user is a working developer — reads diffs and stack traces. Pitch at **patterns and
+  tradeoffs**, not basic syntax. **Converse in Vietnamese; write all files in English.**
+- **Git Bash, not PowerShell** (trap #5). Git is installed on **D:**.
+- One service = one folder = one Dockerfile = one database. Each exposes `/health`.
+- **Never commit `.env`.**
+- **Never claim "done" without running it.** In a distributed system, "it compiles" says almost nothing.
+- High-risk actions (deleting legacy code, `push --force`, `compose down -v`, adding tech outside the
+  roadmap, changing project direction) → **propose and wait**. See the risk threshold in
+  `CLAUDE_RULES.md`. Routine work: just do it.
+
+## After any change
+
+Run it to verify → update `PROJECT_STATE.md` **in the same change** → add a journal entry if there
+was a decision or a bug worth remembering.

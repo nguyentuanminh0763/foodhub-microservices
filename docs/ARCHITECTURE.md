@@ -1,58 +1,180 @@
 # Architecture
 
+## Method: walking skeleton first
+
+The first milestone is not a feature. It is a request travelling from a client, through the gateway,
+into a service in a different container, and back — with **no business logic at all**.
+
+That ordering is deliberate. Wiring problems (container DNS, ports, startup ordering, broker
+addressing) are the ones that stop a distributed project dead, and they are far cheaper to solve
+when no feature code is obscuring them. A skeleton that walks can be given muscle. A pile of muscle
+that has never stood up is expensive to debug.
+
 ## Principles
 
 1. **One service = one business responsibility = one database.** No service queries another
-   service's database directly. If Order needs restaurant data, it calls the Restaurant
-   Service's API. This is the *database-per-service* pattern and it is the single biggest
-   difference from a monolith.
-2. **The gateway is the only public door.** Clients never call services directly. The gateway
-   routes requests and validates the JWT once, at the edge.
-3. **Polyglot on purpose.** Some services are Spring Boot, some are Node.js — to prove that
-   services are independent of language, and to practice both stacks.
+   service's database. If order needs restaurant data it calls the API. This is
+   *database-per-service*, the single biggest difference from a monolith.
+2. **The gateway is the only public door.** Clients never reach a service directly. It routes, and
+   from Phase 5 it validates the JWT once at the edge.
+3. **Services are independently deployable.** Each has its own `package.json`, its own Dockerfile,
+   its own database. There is no shared library — see *Sharing contracts* below.
 
 ## Services
 
-### API Gateway (Spring Cloud Gateway)
-The single entry point. Responsibilities: route incoming requests to the right service, and
-validate the JWT before forwarding. Everything else (business logic) belongs in the services.
+### Gateway (:3000)
+The only published port. Routes `/api/restaurants/**` and `/api/orders/**`. Later: JWT validation
+and Redis-backed rate limiting.
 
-### Auth Service (Spring Boot + MySQL)
-Owns users and identity. Register, login, issue JWTs, manage roles
-(`CUSTOMER`, `RESTAURANT`, `ADMIN`). It is the only service that knows passwords.
+Routing is written by hand rather than delegated to a framework, because the questions it forces —
+what status code when a downstream is down, what timeout, which headers to forward, how identity
+propagates — are exactly the ones worth being able to answer.
 
-### Restaurant Service (Node.js + MongoDB)
-Owns the catalog: restaurants, menus, dishes, availability and price. MongoDB fits because the
-menu shape is flexible and read-heavy. This is the data Order needs to validate an order.
+### restaurant-service (:3001) + restaurants-db
+Owns restaurants, dishes, prices and availability. Read-heavy. The source of truth for whether a
+dish exists and what it costs.
 
-### Order Service (Spring Boot + MySQL)
-Owns orders. When a customer places an order it:
-1. Calls the Restaurant Service over REST (**synchronous**) to confirm each dish exists and to
-   read its current price — it must not trust prices sent by the client.
-2. Persists the order in its own MySQL database.
-3. (Phase 2) Publishes an `OrderPlaced` event to RabbitMQ (**asynchronous**) and returns to the
-   user immediately — it does not wait for notifications or payment side-effects.
+### order-service (:3002) + orders-db
+Owns orders. Placing one:
+1. calls restaurant-service over HTTP (**sync**) to validate each dish and read the real price;
+2. writes the order to its own database;
+3. publishes `order.created` to Kafka (**async**) and returns immediately.
 
-### Payment Service (Spring Boot + Stripe/PayOS) — Phase 2
-Isolated on purpose: payment logic and secrets stay in one place. Publishes `PaymentConfirmed`.
+### notification-service — Phase 3
+Pure consumer. Reacts to `order.created`. It has no inbound API from the gateway.
 
-### Notification Service (Node.js + Firebase) — Phase 2
-Pure consumer. Listens for `OrderPlaced` and `PaymentConfirmed` and notifies the customer and
-the restaurant. It has no inbound API from the gateway — it only reacts to events.
+## Two communication styles
 
-## Why microservices here (and when NOT to)
+**Sync — HTTP.** order → restaurant: *"does this dish exist and what does it cost?"* The caller
+cannot proceed without the answer, so it waits. The cost is **temporal coupling**: if
+restaurant-service is down, order-service is down too. Timeouts, retries and circuit breakers reduce
+the blast radius; they do not remove the dependency.
 
-Microservices are justified for this system *as a learning exercise* and because the contexts
-genuinely differ (payment isolation, async notifications, independent scaling). **But be honest
-in interviews:** for a real product at small scale, a well-structured monolith would ship faster,
-be easier to debug, and avoid distributed-system pain (network failures, eventual consistency,
-harder local setup). The ability to argue *both sides* is what demonstrates real understanding.
+**Async — Kafka.** order publishes `order.created` and returns. Consumers react later. order does
+not know who is listening and does not care if nobody is. The cost is **eventual consistency**: for
+a while the order exists and no notification has been sent.
 
-## Request example: placing an order
+The rule worth remembering: **synchronous when the caller cannot continue without the answer;
+asynchronous when the work can happen afterwards.** Price validation is the first. Notifying the
+customer, updating analytics, marking stock are the second.
 
-1. Client → Gateway: `POST /api/orders` with JWT.
-2. Gateway validates the JWT, routes to Order Service.
-3. Order Service → Restaurant Service (sync REST): "do these dishes exist, what's the price?"
-4. Order Service saves the order in its MySQL DB.
-5. (Phase 2) Order Service publishes `OrderPlaced` to RabbitMQ and returns `201 Created`.
-6. (Phase 2) Notification Service consumes `OrderPlaced` and notifies the customer + restaurant.
+### Why Kafka is not between gateway and services
+
+"Receive a request, forward it, return the response" is request/response. Kafka is an append-only
+log with no notion of a reply. It *can* be forced into request-reply with reply topics and
+correlation IDs, and the result is slower, more complex, and teaches a wrong mental model of what
+Kafka is for.
+
+## Never trust a client-supplied price
+
+order-service re-reads every price from restaurant-service. This is the entire justification for the
+sync call: a client that can name its own price can buy a meal for zero. It is also the cleanest
+illustration of why database-per-service costs something — in a monolith this would be a `JOIN`.
+
+## Sharing contracts between services
+
+There is no `shared/` package. Each service owns its own types, and when two services need the same
+shape it is **copied**.
+
+This is a real trade, chosen deliberately. A shared library gives compile-time safety and creates a
+coupling that must be versioned and deployed in lockstep — at which point the services are not
+independently deployable and a large part of the microservices argument evaporates. Copying means
+the copies can drift, and detecting drift becomes a runtime and contract-testing problem.
+
+Both answers are defensible. The point of choosing the copy is to *experience* the drift rather than
+read about it, then be able to describe what consumer-driven contract testing would have solved.
+
+## Decision record: Kafka over RabbitMQ
+
+**Be honest about this one.** For a notification flow taken in isolation, **RabbitMQ is the better
+tool.** "An order happened → notify someone" is a task queue: each message is handled once and then
+it is done. That is precisely what RabbitMQ is built for — a smart broker with exchange/binding
+routing, per-message acks, and deletion on ack.
+
+Kafka is a partitioned append-only log: dumb broker, consumer tracks its own offset, messages
+retained by policy rather than deleted on consume.
+
+Kafka is used here for two reasons, and the first should be stated plainly rather than dressed up:
+
+1. **Learning Kafka is an explicit goal of this project.** Pretending otherwise would produce a
+   decision that cannot be defended under questioning.
+2. **The order lifecycle is genuinely a stream, not a task.** `PLACED → PAID → PREPARING →
+   DELIVERED`, partitioned by `orderId`, is a replayable audit trail. An analytics consumer group
+   can read the same stream without touching the business flow — the clearest possible demonstration
+   of decoupling. A queue cannot do either.
+
+The interview answer: *"If the only requirement were 'send one notification', I would have used
+RabbitMQ, and I can explain why. I chose Kafka because the order lifecycle is a stream I want to
+replay and attach independent consumers to — and because I wanted to learn the log model
+first-hand."*
+
+For the record, **Redis Pub/Sub is not a substitute for either.** It is fire-and-forget: a message
+published while no subscriber is connected is gone forever. Fine for ephemeral signals, unacceptable
+for orders.
+
+## Decision record: where Redis fits
+
+Redis arrives in **Phase 4**, answering a problem the project will have actually hit by then:
+
+1. **Contention on the last portion.** Two customers order the final serving simultaneously. Without
+   coordination both succeed and the restaurant is oversold. A `DECR`-style atomic operation or a
+   short-lived distributed lock is the fix, and the failure is reproducible with 100 concurrent
+   requests before the fix is written.
+2. **Consumer idempotency.** Kafka delivers *at least once* — a consumer that processes a message
+   then dies before committing its offset sees it again. Storing processed message IDs in Redis with
+   a TTL makes the consumer idempotent, so a duplicate `order.created` does not send a duplicate
+   notification.
+
+Two further uses are legitimate but **deliberately not adopted**:
+
+- **JWT revocation / logout blacklist.** The known weakness of stateless JWT is that a leaked token
+  stays valid until expiry. A Redis blacklist keyed by `jti` with TTL = remaining lifetime fixes
+  that — at the cost of a Redis lookup per request, giving up part of the statelessness that made
+  JWT attractive. Adopt when logout is implemented, and name the trade out loud.
+- **Caching the catalog.** Menus are read-heavy and rarely written, which is textbook caching. But
+  caching *prices* is dangerous: a 5-minute TTL means a price change can bill the old amount. With
+  database-per-service, restaurant does not know what order has cached, so there is no clean
+  invalidation path. Adopt only after measuring that the sync call is the bottleneck — and even
+  then, cache dish existence and metadata, not price.
+
+Redis here is **cache and coordination, not a database of record**: everything in it can be thrown
+away and the system remains correct. That is why a single Redis separated by key prefix
+(`order:idem:*`, `stock:lock:*`) does not violate database-per-service. The moment Redis holds
+something that cannot be rebuilt, it becomes a database and the rule applies again.
+
+## Startup ordering
+
+`depends_on` alone waits for a container to *start*, not to become *usable* — and Postgres and Kafka
+both take far longer to accept connections than a Node process takes to boot. Every dependency uses
+`condition: service_healthy` with a real healthcheck.
+
+Worth understanding rather than copying: in a real cluster nothing orders things for you, and
+services must tolerate their dependencies being absent at startup and returning later. The
+healthcheck hides a problem that Kubernetes will hand back.
+
+## Why microservices here — and when not to
+
+Microservices are justified for this system *as a learning exercise*, and the contexts do genuinely
+differ (catalog is read-heavy, orders are write-heavy, notification is a pure consumer).
+
+**But be honest in interviews:** food ordering at this scale does not need microservices. A single
+NestJS application with clean module boundaries would ship faster, debug more easily, and avoid
+every distributed-systems problem in this document.
+
+The defensible position: *"I built it as microservices to learn the failure modes first-hand — the
+network calls, eventual consistency, startup ordering, duplicate delivery. For a product at this
+scale I would start with a modular monolith. I now know specifically what I would be giving up and
+what it would cost to change my mind later."*
+
+## Request walkthrough: placing an order
+
+1. Client → gateway: `POST /api/orders`
+2. Gateway routes to order-service *(from Phase 5, validating the JWT first)*
+3. order-service → restaurant-service (**sync HTTP**): do these dishes exist, what do they cost?
+4. order-service writes the order to `orders-db` with the prices it just read
+5. order-service publishes `order.created` to Kafka and returns `201 Created`
+6. notification-service consumes `order.created` and notifies customer and restaurant
+
+Steps 1–5 are synchronous from the customer's point of view. Step 6 happens whenever it happens, and
+the customer never waits for it. That gap is eventual consistency, and it is the price of not
+blocking the user on a push notification.
