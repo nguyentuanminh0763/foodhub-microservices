@@ -1,11 +1,13 @@
 server:
   port: 8082
 
+# Defaults after ':' let you run this straight from the IDE against the dockerised
+# MySQL on localhost:3308. docker-compose overrides them with real env vars.
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3308/foodhub_order}
+    username: ${SPRING_DATASOURCE_USERNAME:foodhub}
+    password: ${SPRING_DATASOURCE_PASSWORD:changeme}
   jpa:
     hibernate:
       ddl-auto: update
@@ -14,4 +16,4 @@ spring:
 # URL of the restaurant-service, used for the SYNC REST call (see RestaurantClient)
 restaurant:
   service:
-    url: ${RESTAURANT_SERVICE_URL}
+    url: ${RESTAURANT_SERVICE_URL:http://localhost:3001}
