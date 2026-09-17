@@ -20,7 +20,8 @@ Delivery and driver tracking are scope C, deferred.
 > Migrated from Spring Boot + Express to NestJS on 2026-09-06. The old code is on the
 > `legacy/spring` branch, **not** on `main` — do not resurrect it.
 > Live infrastructure right now: `restaurants-db` (5433) and `orders-db` (5434), both healthy.
-> No services exist yet.
+> `gateway` and `restaurant` exist and are tested; `restaurant` talks to Postgres through Prisma.
+> `order` still has no database. Nothing is containerised yet — see `PROJECT_STATE.md`.
 
 ---
 

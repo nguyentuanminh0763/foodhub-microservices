@@ -1,6 +1,6 @@
 # FoodHub — Project State
 
-> **Last updated:** 2026-09-17 (gateway under test — 7 passing, mutation-checked)
+> **Last updated:** 2026-09-17 (restaurant-service on Prisma 7 + Postgres, 4 tests, `/health` real)
 > **Overall:** 🔜 Phase 1. Tasks 1.1–1.4 done. The **application skeleton** of 1.5–1.7 answers
 > `200` through the gateway — from three terminal processes, with **no database and no containers**
 > behind it yet. The gateway's routing and failure mapping are now pinned by tests.
@@ -9,10 +9,10 @@
 
 Two pieces are still missing before 1.5–1.7 can be called done:
 
-1. **Prisma in `services/restaurant`** — `schema.prisma` for `restaurants` + `dishes` (`price Int`),
-   `migrate dev`, `/health` reporting real DB connectivity, plus a test that hits `restaurants-db`.
-   Then the same for `services/order`.
-   Done when `\dt` inside `restaurants-db` lists tables instead of "Did not find any relations".
+1. ~~**Prisma in `services/restaurant`**~~ ✅ done 2026-09-17 — `\dt` lists `restaurants`, `dishes`
+   and `_prisma_migrations`. **Same for `services/order`** next: an `orders` table with the
+   `PENDING → PAID → CONFIRMED → READY` lifecycle from `BUSINESS_OVERVIEW.md`, `totalVnd Int`.
+   Copy the Prisma 7 setup from `restaurant` — it is four files and two of them are config.
 2. **Dockerfiles + compose wiring** for all three, so `docker compose up --build` reproduces what
    currently only runs from three terminals. That is what makes `curl localhost:3000/...` the real
    Phase 1 milestone rather than a local coincidence.
@@ -69,11 +69,11 @@ touches a database yet.
 | Git identity | ✅ Fixed 2026-09-06 | Own GPG key `5359A8A8A6C4F69C`, noreply email, commits signed. Public key **still needs pasting into GitHub** for the Verified badge (cosmetic) |
 | Documentation | ✅ Rewritten for the target stack, all English | README, ARCHITECTURE, RUNNING, CLAUDE*, PROJECT_STATE, ai-journal |
 | `docker-compose.yml` | ✅ Two Postgres, both verified `healthy` | Task 1.4 done 2026-09-06 |
-| `restaurants-db` | ✅ Running, `foodhub_restaurants` auto-created, no tables yet | host `5433` → container `5432` |
+| `restaurants-db` | ✅ Running, `restaurants` + `dishes` + `_prisma_migrations` created | host `5433` → container `5432` |
 | `orders-db` | ✅ Running, `foodhub_orders` auto-created, no tables yet | host `5434` → container `5432` |
 | `.env` / `.env.example` | ✅ Rewritten for Postgres + Prisma | |
 | `services/gateway` | 🟡 Runs, proxies, **7 tests passing** | `:3000`, forwards `/api/<service>/*`. No Dockerfile |
-| `services/restaurant` | 🟡 Runs, `/health` only | `:3001`. **No Prisma, no DB connection, no Dockerfile** |
+| `services/restaurant` | 🟡 Runs, Prisma 7 + Postgres, **4 tests passing** | `:3001`. `/health` reports real DB state. **No Dockerfile** |
 | `services/order` | 🟡 Runs, `/health` only | `:3002`. Same gaps |
 | `.github/workflows/ci.yml` | ⛔ Not created | Task 1.8 |
 
@@ -86,7 +86,66 @@ was deliberately left incomplete under the retired working mode.
 
 ---
 
-## Latest update — Gateway under test; the Map decision is now enforced (2026-09-17)
+## Latest update — restaurant-service reaches Postgres; Prisma pinned to 7 (2026-09-17)
+
+`restaurants` and `dishes` exist as real tables. `GET /api/restaurants/health` runs `SELECT 1` and
+reports what it finds. Four tests, all against `restaurants-db` — nothing mocked.
+
+**Prisma 7.10.0, pinned deliberately.** `npm install prisma` resolved `latest` to **8.0.0-rc.15**, a
+release candidate whose CLI is a different program: no `prisma migrate` at all, replaced by
+`contract` / `db` / `migration`. That got rolled back to the newest stable. Worth knowing generally —
+`latest` on npm is whatever the publisher tagged, not necessarily a stable release.
+
+Prisma 7 itself is a real break from every tutorial written before it:
+
+| Prisma ≤6 | Prisma 7 |
+|---|---|
+| `url = env("DATABASE_URL")` inside `datasource db` | Rejected. URL lives in `prisma.config.ts` (CLI) and in the adapter (runtime) |
+| Rust query engine binary | Gone. `@prisma/adapter-pg` wraps a plain `pg` pool |
+| CLI auto-loads `.env` | It does not. Node 22's `process.loadEnvFile()` covers it, no dotenv |
+
+`migrate dev` additionally needs `datasource.url` in the config even with an adapter present: it
+opens a temporary **shadow database** to diff the schema, and that happens outside the adapter.
+
+**Design choices worth defending:**
+
+- **`SELECT 1`, not `count()` on a table.** Health answers *is the connection alive*, not *has a
+  migration run*. A count would fail on an empty-but-healthy database.
+- **`503` when the database is down**, not `200` with a sad field. This endpoint is read by machines
+  — compose healthchecks, the gateway, later a readiness probe — and they route on the status code.
+- **`$connect()` in `onModuleInit`.** Fail at boot, loudly, rather than at 19:32 with a customer
+  waiting. `depends_on: service_healthy` makes it safe in compose.
+- **`priceVnd`, not `price`.** The unit is in the name, so the `Int` decision cannot be misread at a
+  call site.
+
+**Verified by running, not by building** (`docker compose stop restaurants-db` mid-flight):
+
+| Check | Result |
+|---|---|
+| `\dt` in `restaurants-db` | `restaurants`, `dishes`, `_prisma_migrations` |
+| `\d dishes` | `price_vnd integer`, `stock integer default 0`, FK `ON DELETE CASCADE` |
+| `/health`, database up | `200 {"status":"ok","database":"up"}` |
+| `/health`, database stopped | **`503 {"status":"degraded","database":"down"}`** — and the process stayed alive, uptime still counting |
+| `/health`, database restarted | `200` again, no restart of the service — the `pg` pool reconnected on its own |
+
+That last pair is the Postgres breakage exercise answered: **the service survives**. A dead database
+is a failed request, not a dead process, because the pool owns the connection and the process does
+not. Re-run it yourself and write the journal entry — the `EXPLAIN` step is the one part that cannot
+be outsourced.
+
+**Two traps fixed on the way:**
+
+- **Jest sandboxes `process`.** `process.loadEnvFile()` inside a spec writes to the real process,
+  while the test reads a copy — so `DATABASE_URL` was `undefined` and `pg` failed with
+  *"client password must be a string"*. Fixed with `node --env-file-if-exists=.env` in the test
+  script, which runs before Jest builds that copy. `--if-exists` keeps CI working with no `.env`.
+- **`nest build` compiled `prisma.config.ts`** (it sits outside `src/`), emitting a `prisma.config.js`
+  that the Prisma CLI then loaded *instead of* the `.ts` and failed to parse. Excluded in
+  `tsconfig.build.json`.
+
+---
+
+## Previous update — Gateway under test; the Map decision is now enforced (2026-09-17)
 
 Jest + ts-jest in `services/gateway` only — 3 dev dependencies, config inside `package.json`, one
 spec file. `tsconfig.build.json` keeps specs out of `dist/`. No ESLint, no Prettier, no `nest new`
@@ -124,7 +183,7 @@ Timing: ~36s cold (ts-jest compiling), ~7s warm.
 
 ---
 
-## Previous update — Three NestJS services scaffolded, gateway verified (2026-09-06)
+## Earlier — Three NestJS services scaffolded, gateway verified (2026-09-06)
 
 `main` now holds code again. Three services, hand-written rather than generated by `nest new`: no
 ESLint, Prettier or Jest until something needs them.
@@ -246,6 +305,7 @@ No code was produced this session — deliberate. The next real verification is 
 
 ## Update history
 
+### 2026-09-17 — restaurant-service on Prisma 7 + Postgres; `/health` returns 503 when the DB dies, survives it
 ### 2026-09-17 — Jest in the gateway: 7 tests, mutation-checked. Money `Int`, `migrate dev`, real-Postgres tests decided
 ### 2026-09-06 — Gateway + restaurant + order scaffolded; `:3000` proxies, `503` on a dead upstream
 ### 2026-09-06 — Tasks 1.3–1.4: legacy removed, two Postgres running, docs realigned

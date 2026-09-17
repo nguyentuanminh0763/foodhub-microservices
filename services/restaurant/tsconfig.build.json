@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  // prisma.config.ts sits outside src/ and is run by the Prisma CLI, not by us.
+  // Without excluding it, `nest build` emits prisma.config.js next to it — and
+  // the CLI then loads the stale .js instead of the .ts and fails to parse it.
+  "exclude": ["node_modules", "dist", "prisma.config.ts", "**/*.spec.ts"]
+}

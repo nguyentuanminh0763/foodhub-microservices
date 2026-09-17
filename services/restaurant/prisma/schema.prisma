@@ -1,0 +1,42 @@
+// restaurant-service owns restaurants, dishes, prices and stock — nothing else.
+// order-service must ASK for a price over HTTP; it cannot JOIN against this
+// database. That constraint is the whole point of database-per-service.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 removed `url` from the schema: the connection string now lives in
+// prisma.config.ts (for the CLI) and in the adapter passed to PrismaClient
+// (for runtime). The schema describes shape only, never credentials.
+datasource db {
+  provider = "postgresql"
+}
+
+model Restaurant {
+  id     Int    @id @default(autoincrement())
+  name   String
+  dishes Dish[]
+
+  @@map("restaurants")
+}
+
+model Dish {
+  id   Int    @id @default(autoincrement())
+  name String
+
+  // VND has no subunit: an integer count of dong is exact, and there is nothing
+  // to round. Decimal would be correct too, but Prisma returns it as an object
+  // that needs .toString() at every boundary. Decided 2026-09-17 — a currency
+  // with cents would need a migration to minor units.
+  priceVnd Int @map("price_vnd")
+
+  // "canh chua — 3 portions left" in BUSINESS_OVERVIEW. This is the column five
+  // concurrent orders will fight over in Phase 5, and the reason Redis exists.
+  stock Int @default(0)
+
+  restaurantId Int        @map("restaurant_id")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("dishes")
+}

@@ -90,14 +90,18 @@ Wait until it reports healthy — the healthcheck takes ~10 s on first run:
 docker compose ps
 ```
 
-Then run the service from your terminal:
+Give the service its own `.env` once — it is gitignored, so a fresh clone has none:
 
 ```bash
-cd services/restaurant && npm run start:dev
+cd services/restaurant && cp .env.example .env
 ```
 
-No environment setup needed: `.env` defaults point at `localhost:5433`, which is where compose
-publishes `restaurants-db`.
+The default inside points at `localhost:5433`, which is where compose publishes `restaurants-db`.
+Then run it:
+
+```bash
+npm run start:dev
+```
 
 Verify it is alive:
 
@@ -127,6 +131,14 @@ npx prisma studio
 
 Each service has its **own** `schema.prisma` and its **own** database. Running a migration in
 `services/order` must never touch `restaurants-db`. If it does, database-per-service has been broken.
+
+**Prisma 7 keeps the connection string out of the schema.** `schema.prisma` describes shape only;
+the URL lives in `prisma.config.ts` for the CLI and in the `PrismaPg` adapter for runtime. If you
+follow a tutorial that puts `url = env("DATABASE_URL")` inside `datasource db`, it is written for
+Prisma 6 or older and validation will reject it.
+
+Pinned to **7.10.0 on purpose**: `npm install prisma` currently resolves `latest` to an 8.0.0
+release candidate whose CLI is a different program (`prisma migrate` does not exist in it).
 
 ---
 
