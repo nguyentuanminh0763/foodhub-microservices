@@ -12,7 +12,8 @@ Repo: `https://github.com/nguyentuanminh0763/foodhub-microservices`
    proposing anything architectural
 2. [`CLAUDE_RULES.md`](CLAUDE_RULES.md) — rules, real traps, risk threshold
 3. [`PROJECT_STATE.md`](PROJECT_STATE.md) — per-service state, open issues
-4. [`docs/ai-journal/`](docs/ai-journal/) — past decisions **and rejected options**
+4. [`ROADMAP.md`](ROADMAP.md) — the working loop, phases, and what is done
+5. [`docs/ai-journal/`](docs/ai-journal/) — past decisions **and rejected options**
 
 **Scope: B** (decided 2026-09-06) — browse, order, pay, restaurant confirms, stops at "food ready".
 Delivery and driver tracking are scope C, deferred.
@@ -152,34 +153,12 @@ when the copies drift. That is the distributed-contract lesson, not a design fla
 
 ## Roadmap
 
-| Phase | Goal | Done when |
-|---|---|---|
-| **0** ✅ | Docs + new working rules | `PROJECT_STATE.md`, `CLAUDE_RULES.md`, journal exist |
-| **1** ← **current** | Git identity → rewrite outer docs → delete legacy → compose → 2 services → gateway → minimal CI | `curl localhost:3000/api/restaurants/health` answers through the gateway |
-| **2** | Real data: restaurants, dishes, orders + **sync HTTP** order→restaurant | Order #123 exists with a price read from restaurant-service, not from the client |
-| **3** | **Kafka**: order publishes `order.created`, notification-service consumes | All six experiments in `docs/KAFKA.md` are run |
-| **4** | **payment-service**: second independent consumer of `order.created`, publishes `payment.succeeded` | Two consumer groups on one topic — the actual justification for Kafka |
-| **5** | **Redis**: contention on the last portion → atomic ops / locking, consumer idempotency | 100 concurrent requests, one portion, zero oversell |
-| **6** | JWT at the gateway, identity propagation, full CI/CD | |
-| **7** | Operations: two order-service instances, consumer group splits partitions | |
-| *future* | **Scope C** — driver assignment, live location, delivery | Only after the above works |
+Phases, tasks and per-phase breakage exercises: **[`ROADMAP.md`](ROADMAP.md)**. It also holds the
+step-by-step working loop and the rule on who types which commands.
 
-### Phase 1, broken down
+Currently **Phase 1**, task 1.6. One task per sitting, one commit each.
 
-One task per sitting. Commit each one separately.
-
-| # | Task | Done when |
-|---|---|---|
-| 1.1 | Fix git identity (trap #4) | ✅ Own GPG key `5359A8A8A6C4F69C`, noreply email configured |
-| 1.2 | Rewrite outer docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/RUNNING.md` | No mention of Spring / Maven / IntelliJ remains |
-| 1.3 | Push `legacy/spring`, delete Java/Express from `main` | `services/` empty, separate `refactor:` commit |
-| 1.4 | `docker-compose.yml`: 2 Postgres + healthchecks, **no services yet** | `docker compose up -d` → both DBs healthy |
-| 1.5 | `services/restaurant`: NestJS + Prisma + `/health` + Dockerfile | `curl localhost:3001/api/restaurants/health` |
-| 1.6 | `services/order`: same | `curl localhost:3002/api/orders/health` |
-| 1.7 | `services/gateway`: proxy to both | `curl localhost:3000/api/restaurants/health` ← **Phase 1 done** |
-| 1.8 | `.github/workflows/ci.yml`, minimal | Push → CI green |
-
-1.4 is split from 1.5 on purpose: stand up the databases, confirm the healthchecks, *then* plug
+1.4 was split from 1.5 on purpose: stand up the databases, confirm the healthchecks, *then* plug
 services in. When it breaks you know which layer.
 
 ### Target layout
