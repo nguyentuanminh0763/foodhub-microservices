@@ -6,7 +6,15 @@
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "nest start --watch",
+    "test": "jest"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ]
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -18,7 +26,10 @@
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@types/express": "^5.0.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
+    "jest": "^30.5.1",
+    "ts-jest": "^29.4.12",
     "typescript": "^5.6.0"
   }
 }

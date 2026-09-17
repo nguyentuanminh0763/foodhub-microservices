@@ -1,24 +1,38 @@
 # FoodHub — Project State
 
-> **Last updated:** 2026-09-06 (three NestJS services scaffolded; gateway forwards, verified)
+> **Last updated:** 2026-09-17 (gateway under test — 7 passing, mutation-checked)
 > **Overall:** 🔜 Phase 1. Tasks 1.1–1.4 done. The **application skeleton** of 1.5–1.7 answers
 > `200` through the gateway — from three terminal processes, with **no database and no containers**
-> behind it yet.
+> behind it yet. The gateway's routing and failure mapping are now pinned by tests.
 
 ## ▶ Next action
 
 Two pieces are still missing before 1.5–1.7 can be called done:
 
-1. **Prisma in `services/restaurant`** — `schema.prisma` for `restaurants` + `dishes`, first
-   migration, `/health` reporting real DB connectivity. Then the same for `services/order`.
+1. **Prisma in `services/restaurant`** — `schema.prisma` for `restaurants` + `dishes` (`price Int`),
+   `migrate dev`, `/health` reporting real DB connectivity, plus a test that hits `restaurants-db`.
+   Then the same for `services/order`.
    Done when `\dt` inside `restaurants-db` lists tables instead of "Did not find any relations".
 2. **Dockerfiles + compose wiring** for all three, so `docker compose up --build` reproduces what
    currently only runs from three terminals. That is what makes `curl localhost:3000/...` the real
    Phase 1 milestone rather than a local coincidence.
 
-Three decisions are still **open** and were briefed but not answered: money as `Int` VND vs
-`Decimal`, `prisma migrate` vs `db push`, and whether the hand-written scaffold should be replaced
-by the full `nest new` layout. Current code assumes nothing about the first two.
+**Money is `Int` — decided 2026-09-17.** VND has no subunit, so there is nothing to round; `Int`
+has no float trap; Prisma's `Decimal` returns an object that needs `.toString()` at every boundary.
+Cost: a currency with cents would need a migration to minor units. Acceptable — this is a VND-only
+learning project.
+
+**`prisma migrate dev`, not `db push` — decided 2026-09-17.** Migration SQL is committed, so CI and
+containers run `migrate deploy` against reviewed files instead of letting a tool infer the change.
+Cost: a bad dev schema means `migrate reset`, which drops the database.
+
+**Tests use a real Postgres, not a mocked Prisma — decided 2026-09-17.** Mocking Prisma would only
+test the mock, and the `services: postgres` block CI needs is itself the lesson. Cost: tests need
+Docker running. Jest was chosen over Node 22's built-in `node --test` on career grounds — it is what
+Node job ads name.
+
+One decision remains **open, and blocks nothing**: whether the hand-written scaffold should be
+replaced by the full `nest new` layout. Deferred — Jest arrived without it.
 
 Then 1.8 (minimal CI). Full task table: `CLAUDE.md` → Phase 1, broken down.
 
@@ -58,7 +72,7 @@ touches a database yet.
 | `restaurants-db` | ✅ Running, `foodhub_restaurants` auto-created, no tables yet | host `5433` → container `5432` |
 | `orders-db` | ✅ Running, `foodhub_orders` auto-created, no tables yet | host `5434` → container `5432` |
 | `.env` / `.env.example` | ✅ Rewritten for Postgres + Prisma | |
-| `services/gateway` | 🟡 Runs, proxies, verified | `:3000`, forwards `/api/<service>/*`. No Dockerfile |
+| `services/gateway` | 🟡 Runs, proxies, **7 tests passing** | `:3000`, forwards `/api/<service>/*`. No Dockerfile |
 | `services/restaurant` | 🟡 Runs, `/health` only | `:3001`. **No Prisma, no DB connection, no Dockerfile** |
 | `services/order` | 🟡 Runs, `/health` only | `:3002`. Same gaps |
 | `.github/workflows/ci.yml` | ⛔ Not created | Task 1.8 |
@@ -72,7 +86,45 @@ was deliberately left incomplete under the retired working mode.
 
 ---
 
-## Latest update — Three NestJS services scaffolded, gateway verified (2026-09-06)
+## Latest update — Gateway under test; the Map decision is now enforced (2026-09-17)
+
+Jest + ts-jest in `services/gateway` only — 3 dev dependencies, config inside `package.json`, one
+spec file. `tsconfig.build.json` keeps specs out of `dist/`. No ESLint, no Prettier, no `nest new`
+rewrite.
+
+Nothing is mocked. The spec starts a real Nest app on a random port and a real `node:http` upstream
+on another, because what is under test *is* network behaviour — a mocked `fetch` would only prove
+the mock matched the test's expectations.
+
+| Test | Pins |
+|---|---|
+| Known service forwards, path + query intact | `originalUrl`, not the matched route |
+| Unknown service → `404` | The routing table is a whitelist |
+| `constructor` → `404` | The `Map`-not-object-literal decision |
+| POST method + body forwarded | Write path works, not just reads |
+| Dead upstream → `503` | Nobody answered |
+| Slow upstream → `504` | Answered too late — different cause, different code |
+| One route down, the other `200` | Blast radius |
+
+**The suite was mutation-checked, not just run.** Swapping the `Map` for an object literal made the
+`constructor` test fail — and it failed with **`503`, not `500`**: `TARGETS['constructor']` resolves
+up the prototype chain to `Object.prototype.constructor`, which is truthy, so the `if (!target)`
+guard passes and `fetch` is handed a function where a URL belongs. The failure surfaces as an
+unreachable upstream. A guard that looks like it is checking the routing table is really checking
+`Object.prototype`. Reverted; 7/7 green.
+
+Two env-time traps the spec had to work around, both worth remembering:
+
+- **`TARGETS` is built at import time.** The spec sets `process.env` *then* `await import`s
+  `AppModule`. A normal top-level import would freeze `localhost:3001` into the table.
+- **`setGlobalPrefix('api')` lives in `main.ts`**, which tests never load. Without repeating it in
+  the spec, every path 404s and the suite looks broken for the wrong reason.
+
+Timing: ~36s cold (ts-jest compiling), ~7s warm.
+
+---
+
+## Previous update — Three NestJS services scaffolded, gateway verified (2026-09-06)
 
 `main` now holds code again. Three services, hand-written rather than generated by `nest new`: no
 ESLint, Prettier or Jest until something needs them.
@@ -120,7 +172,7 @@ is off. That is for the Prisma/DI code that comes next; revisit it if it starts 
 
 ---
 
-## Previous update — Legacy removed, databases running, docs realigned (2026-09-06)
+## Earlier — Legacy removed, databases running, docs realigned (2026-09-06)
 
 **Task 1.3** — pushed branch `legacy/spring`, deleted all Spring/Express code from `main`. The
 hand-written `AuthService.register/login` is preserved on that branch, not lost.
@@ -184,7 +236,7 @@ No code was produced this session — deliberate. The next real verification is 
 |---|---|---|---|
 | 1 | Nothing ran end to end after ~3 weeks | 🟠 Medium | Downgraded: three services now answer through the gateway. Still true *in containers* — `docker compose up` starts databases only |
 | 2 | ~~`docker-compose.yml` and `.env.example` hold legacy config~~ | ✅ Done | Task 1.4 rewrote both |
-| 7 | No test, no CI — nothing catches a regression | 🟠 Medium | Deliberate until task 1.8. The `503`/`504` mapping in the gateway is the first thing worth a test |
+| 7 | No CI — nothing runs the tests on push | 🟠 Medium | Downgraded: the gateway has 7 tests as of 2026-09-17. `restaurant` and `order` still have none, and nothing runs any of them automatically until task 1.8 |
 | 3 | GPG public key not yet uploaded to GitHub | 🟢 Low | Until then commits stay *Unverified*. Cosmetic only — attribution already works |
 | 4 | `.env` holds real secrets, gitignored | 🟢 Low | Re-check before every push |
 | 5 | ~~Legacy Java/Express code on `main`~~ | ✅ Done | Task 1.3 — preserved on `legacy/spring`, removed from `main` |
@@ -194,6 +246,7 @@ No code was produced this session — deliberate. The next real verification is 
 
 ## Update history
 
+### 2026-09-17 — Jest in the gateway: 7 tests, mutation-checked. Money `Int`, `migrate dev`, real-Postgres tests decided
 ### 2026-09-06 — Gateway + restaurant + order scaffolded; `:3000` proxies, `503` on a dead upstream
 ### 2026-09-06 — Tasks 1.3–1.4: legacy removed, two Postgres running, docs realigned
 ### 2026-09-06 — Stack pivot, new working mode, git identity fixed
