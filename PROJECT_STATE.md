@@ -1,19 +1,16 @@
 # FoodHub — Project State
 
-> **Last updated:** 2026-09-17 (restaurant-service on Prisma 7 + Postgres, 4 tests, `/health` real)
-> **Overall:** 🔜 Phase 1. Tasks 1.1–1.4 done. 1.5–1.7 answer `200` through the gateway from three
-> terminal processes. `restaurant` now reaches Postgres; `order` does not, and **nothing is
-> containerised**.
+> **Last updated:** 2026-09-17 (order-service on Prisma 7 too; both services reach Postgres)
+> **Overall:** 🔜 Phase 1, tasks 1.1–1.6 done. All three services run and are tested, but **from
+> three terminals** — nothing is containerised.
 
 ## ▶ Next action
 
-1. **Prisma in `services/order`** — an `orders` table with the `PENDING → PAID → CONFIRMED → READY`
-   lifecycle from `BUSINESS_OVERVIEW.md`, `totalVnd Int`. Copy the Prisma 7 setup from `restaurant`:
-   four files, two of them config.
-2. **Dockerfiles + compose wiring** for all three, so `docker compose up --build` reproduces what
+1. **Dockerfiles + compose wiring** for all three, so `docker compose up --build` reproduces what
    currently only runs from three terminals. That is what makes `curl localhost:3000/...` the real
-   Phase 1 milestone rather than a local coincidence.
-3. Then 1.8 (minimal CI). Full task table: `CLAUDE.md` → Phase 1, broken down.
+   Phase 1 milestone rather than a local coincidence. Watch for the `DATABASE_URL` switch:
+   `localhost:5433` from a terminal, `restaurants-db:5432` inside the network.
+2. Then 1.8 (minimal CI). Checklist: [`ROADMAP.md`](ROADMAP.md).
 
 ### Decisions taken 2026-09-17
 
@@ -56,15 +53,33 @@ in the next 6–12 months.
 | Git identity | ✅ Own GPG key `5359A8A8A6C4F69C`, noreply email, signed | Public key **still needs pasting into GitHub** for the Verified badge (cosmetic) |
 | `docker-compose.yml` | ✅ Two Postgres, both `healthy` | Services not wired in yet |
 | `restaurants-db` | ✅ `restaurants` + `dishes` + `_prisma_migrations` | host `5433` → container `5432` |
-| `orders-db` | ✅ Running, `foodhub_orders`, no tables yet | host `5434` → container `5432` |
+| `orders-db` | ✅ `orders` + `order_items` + `OrderStatus` enum | host `5434` → container `5432` |
 | `services/gateway` | 🟡 Runs, proxies, **7 tests** | `:3000`. No Dockerfile |
 | `services/restaurant` | 🟡 Runs, Prisma 7 + Postgres, **4 tests** | `:3001`. `/health` reports real DB state. No Dockerfile |
-| `services/order` | 🟡 Runs, `/health` returns a constant | `:3002`. No Prisma, no tests, no Dockerfile |
+| `services/order` | 🟡 Runs, Prisma 7 + Postgres, **4 tests** | `:3002`. `/health` reports real DB state. No Dockerfile |
 | `.github/workflows/ci.yml` | ⛔ Not created | Task 1.8 |
 
 ---
 
-## Latest update — restaurant-service reaches Postgres; Prisma pinned to 7 (2026-09-17)
+## Latest update — order-service reaches Postgres (2026-09-17)
+
+`orders` + `order_items` + a real Postgres `OrderStatus` enum. Same Prisma 7 shape as `restaurant`,
+so the setup is now proven twice rather than once. 4 tests, `/health` returns `200 database:up`.
+
+Two things this schema says that a monolith would not have to:
+
+- **`dishId` is a plain `Int` with no foreign key.** That row lives in `restaurants-db`. Postgres
+  cannot enforce a constraint across databases, so nothing stops an order referencing dish #999 —
+  which is exactly why Phase 2's synchronous HTTP call has to exist.
+- **`dishName` and `priceVnd` are copied into `order_items` at order time.** The restaurant may
+  reprice tomorrow; order #123 must still say what the customer agreed to pay.
+
+The enum is a Postgres type, not a string column: `UPDATE orders SET status = 'DELIVERED'` is
+rejected by the database, not by application code. One of the four tests pins that.
+
+---
+
+## Previous update — restaurant-service reaches Postgres; Prisma pinned to 7 (2026-09-17)
 
 `restaurants` and `dishes` exist as real tables. `GET /api/restaurants/health` runs `SELECT 1` and
 reports what it finds. Four tests, all against `restaurants-db` — nothing mocked.
@@ -194,6 +209,7 @@ Closed: #2 (compose/env rewritten, task 1.4), #5 (legacy code removed, task 1.3)
 
 ## Update history
 
+### 2026-09-17 — order-service on Prisma 7 + Postgres; `orders` + `order_items` + enum; ROADMAP.md added
 ### 2026-09-17 — restaurant-service on Prisma 7 + Postgres; `/health` returns 503 when the DB dies, survives it
 ### 2026-09-17 — Jest in the gateway: 7 tests, mutation-checked. Money `Int`, `migrate dev`, real-Postgres tests decided
 ### 2026-09-06 — Gateway + restaurant + order scaffolded; `:3000` proxies, `503` on a dead upstream

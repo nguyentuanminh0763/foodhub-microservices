@@ -28,8 +28,8 @@ Done when `curl localhost:3000/api/restaurants/health` answers through the gatew
 - [x] 1.3 Push `legacy/spring`, delete Java/Express from `main`
 - [x] 1.4 `docker-compose.yml` — 2 Postgres + healthchecks
 - [x] 1.5 `restaurant` — Prisma 7, `restaurants` + `dishes`, `/health` reports real DB state
-- [ ] **1.6 `order` — Prisma 7, `orders` + `order_items`, same `/health`** ← current
-- [ ] 1.7 Three Dockerfiles, services wired into compose
+- [x] 1.6 `order` — Prisma 7, `orders` + `order_items`, `OrderStatus` enum, same `/health`
+- [ ] **1.7 Three Dockerfiles, services wired into compose** ← current
 - [ ] 1.8 `.github/workflows/ci.yml` — build + test on push
 
 ## Phase 2 — real data

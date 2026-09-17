@@ -1,0 +1,49 @@
+// order-service owns orders and their lifecycle. It does NOT own dishes:
+// dishId below is a plain Int with no foreign key, because that row lives in
+// another service's database. The price must be asked for over HTTP.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7: no `url` here. It lives in prisma.config.ts and in the adapter.
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CONFIRMED
+  READY
+  CANCELLED
+}
+
+model Order {
+  id        Int         @id @default(autoincrement())
+  status    OrderStatus @default(PENDING)
+  totalVnd  Int         @map("total_vnd")
+  createdAt DateTime    @default(now()) @map("created_at")
+  items     OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id       Int @id @default(autoincrement())
+  quantity Int
+
+  // No relation to a Dish: that table is in restaurants-db. Crossing the
+  // boundary is what Phase 2's synchronous HTTP call exists to avoid.
+  dishId Int @map("dish_id")
+
+  // Copied at order time, not looked up later: the restaurant may reprice
+  // tomorrow, and order #123 must still say what the customer agreed to pay.
+  dishName String @map("dish_name")
+  priceVnd Int    @map("price_vnd")
+
+  orderId Int   @map("order_id")
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
