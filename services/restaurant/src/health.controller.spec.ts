@@ -1,23 +1,18 @@
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 
-// These tests need restaurants-db running:  docker compose up -d restaurants-db
-// That is the point. Mocking Prisma would test the mock, not the schema — and
-// the schema is what is new here.
+// Needs restaurants-db running:  docker compose up -d restaurants-db
 //
-// DATABASE_URL arrives via `node --env-file-if-exists=.env` in the test script,
-// not process.loadEnvFile() in here: Jest gives each test file a sandboxed copy
-// of `process`, so a native env load lands in the real process and the test
-// never sees it. The flag runs before Jest starts, so the copy is made from an
-// environment that already has the variable. --if-exists keeps CI working,
-// where DATABASE_URL is a real variable and no .env file is shipped.
+// DATABASE_URL arrives via `node --env-file-if-exists=.env` in the test script.
+// Not process.loadEnvFile(): Jest gives each spec a sandboxed copy of `process`,
+// so a native env load lands somewhere the test cannot read.
 
 let app: INestApplication;
 let prisma: PrismaService;
 let base: string;
 
-// Only rows this file created get deleted, by id. A blanket deleteMany() would
-// wipe whatever the developer was looking at in the same dev database.
+// Only rows this file created get deleted. A blanket deleteMany() would wipe
+// whatever the developer was looking at in the same dev database.
 const created: number[] = [];
 
 beforeAll(async () => {
@@ -79,11 +74,9 @@ describe('schema', () => {
     created.push(restaurant.id);
 
     const [dish] = restaurant.dishes;
-    // The money decision, pinned. Switch priceVnd to Decimal and this fails:
-    // Prisma hands back an object, and `45000 * 2` silently stops working.
+    // The money decision, pinned. Switch to Decimal and `45000 * 2` stops working.
     expect(typeof dish.priceVnd).toBe('number');
     expect(dish.priceVnd * 2).toBe(90_000);
-    // stock defaults to 0 — a dish nobody set stock on cannot be oversold.
     expect(dish.stock).toBe(0);
   });
 
@@ -96,7 +89,7 @@ describe('schema', () => {
 
     await prisma.restaurant.delete({ where: { id: restaurant.id } });
 
-    // onDelete: Cascade, enforced by Postgres rather than by application code.
+    // onDelete: Cascade, enforced by Postgres rather than application code.
     expect(await prisma.dish.findUnique({ where: { id: dishId } })).toBeNull();
   });
 });
