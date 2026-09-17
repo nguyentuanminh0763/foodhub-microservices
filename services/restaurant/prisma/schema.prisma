@@ -34,3 +34,16 @@ model Dish {
 
   @@map("dishes")
 }
+
+// An idempotent stock reservation also stores the agreed prices. Retries never
+// deduct twice and never pick up a price change halfway through checkout.
+model Reservation {
+  id           String   @id
+  restaurantId Int      @map("restaurant_id")
+  request      Json
+  items        Json
+  released     Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("reservations")
+}

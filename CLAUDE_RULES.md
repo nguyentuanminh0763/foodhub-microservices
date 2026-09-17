@@ -1,6 +1,6 @@
 # CLAUDE RULES — FoodHub
 
-> Durable working rules. Read before changing anything. Last updated 2026-09-06.
+> Durable working rules. Read before changing anything. Last updated 2026-09-17.
 
 ---
 
@@ -85,6 +85,10 @@ write tests, write docs, refactor within scope.
 - `docker compose down -v` (drops volumes = data loss)
 - Adding technology not in the roadmap
 - Changing project direction again — **especially this**; see `docs/ai-journal/00_stack-pivot.md`
+- **Copying reference code from `codex/reference-implementation` into `codex/learning`.** Added
+  2026-09-17. The split exists so the user builds it themselves and consults the reference only when
+  stuck; merging the two erases the point. See `docs/BRANCHES.md`.
+- Resuming feature work while `PROJECT_STATE.md` says the work is paused
 
 ---
 
@@ -185,9 +189,80 @@ docker compose config
 Every `${...}` must be a real value. Empty values mean `.env` is missing or malformed — not a
 service bug.
 
+A fresh clone has none. Generate it — the script adds what is missing and never overwrites an
+existing secret:
+
+```bash
+node scripts/setup-env.mjs
+```
+
+Each Prisma service additionally needs its **own** `.env`, because the CLI reads from the service
+directory. Same database, two addresses: `localhost:5433` from a terminal, `restaurants-db:5432`
+from inside the compose network.
+
 > Trap #7 was the Java/Maven/MySQL entry. Deleted 2026-09-06 once the last Spring leftovers
 > (`services/auth-service/.idea`, `target/`) were removed from disk — it warned about a stack this
 > repo no longer has. Still on the `legacy/spring` branch if it is ever needed.
+
+### 8. Prisma 7 moved the connection string out of the schema
+
+`url = env("DATABASE_URL")` inside `datasource db` is **rejected**. Every tutorial written before
+Prisma 7 has it. The URL now lives in two places, for two different readers:
+
+| Reader | Where |
+|---|---|
+| Prisma CLI | `prisma.config.ts` → `datasource.url` |
+| Runtime | the `PrismaPg` adapter passed to `new PrismaClient({ adapter })` |
+
+`migrate dev` needs `datasource.url` **even when an adapter is configured** — it opens a temporary
+shadow database to diff the schema, and that happens outside the adapter. There is also no Rust
+query engine any more: the pool is plain `pg`.
+
+Prisma 7 does not auto-load `.env` either. Node 22's `process.loadEnvFile()` covers it — no dotenv.
+
+### 9. `npm install prisma` resolved `latest` to a release candidate
+
+Hit 2026-09-17: `latest` pointed at **8.0.0-rc.15**, whose CLI is a different program — no
+`prisma migrate` at all, replaced by `contract` / `db` / `migration`. Pinned back to 7.10.0.
+
+`latest` on npm is whatever the publisher tagged, not a promise of stability. For anything that
+touches a database, check first:
+
+```bash
+npm view prisma dist-tags
+```
+
+### 10. Jest sandboxes `process` — a native env load never reaches the test
+
+`process.loadEnvFile()` inside a spec writes to the real process while the test reads a sandboxed
+copy. Symptom: `DATABASE_URL` is `undefined` and `pg` fails with **"client password must be a
+string"** — a message pointing nowhere near the cause.
+
+Load env *before* Jest starts, in the test script:
+
+```
+"test": "node --env-file-if-exists=.env node_modules/jest/bin/jest.js"
+```
+
+`--if-exists` keeps CI working, where `DATABASE_URL` is a real variable and no `.env` is shipped.
+
+### 11. `nest build` compiles `prisma.config.ts` and then the CLI loads the wrong file
+
+`prisma.config.ts` sits outside `src/`, so `nest build` emits a `prisma.config.js` beside it. The
+Prisma CLI prefers the `.js` and fails to parse it. Exclude it in `tsconfig.build.json`:
+
+```json
+"exclude": ["node_modules", "dist", "prisma.config.ts", "**/*.spec.ts"]
+```
+
+### 12. Never set `container_name` in compose
+
+A fixed name makes `docker compose up --scale order=2` fail — two containers cannot share one name.
+Phase 7 exists to run two `order` instances and watch the consumer group split partitions, so a
+`container_name` line would block the exercise the phase is for.
+
+Seen in the older TicketFlow compose, along with four services sharing one Postgres. Do not copy
+either.
 
 ---
 

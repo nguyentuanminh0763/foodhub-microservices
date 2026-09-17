@@ -1,7 +1,6 @@
-# FoodHub — Phase 1 orchestration.
+# FoodHub scope B. Local development only; published ports bind to loopback.
 #
-# Task 1.4 state: databases only. Services are added in tasks 1.5-1.7,
-# Kafka in Phase 3, Redis in Phase 4. Nothing is added before it is needed.
+# Database volumes retain data across restarts. Never use down -v for upgrades.
 #
 # Two ways to run — see docs/RUNNING.md:
 #   1. Fast loop (while coding one service): start only its database.
@@ -18,7 +17,7 @@ services:
 
   restaurants-db:
     image: postgres:16
-    ports: ["5433:5432"]
+    ports: ["127.0.0.1:5433:5432"]
     environment:
       POSTGRES_DB: ${RESTAURANTS_DB_NAME}
       POSTGRES_USER: ${RESTAURANTS_DB_USER}
@@ -36,7 +35,7 @@ services:
 
   orders-db:
     image: postgres:16
-    ports: ["5434:5432"]
+    ports: ["127.0.0.1:5434:5432"]
     environment:
       POSTGRES_DB: ${ORDERS_DB_NAME}
       POSTGRES_USER: ${ORDERS_DB_USER}
@@ -49,14 +48,197 @@ services:
       retries: 20
       start_period: 10s
 
-  # ---------- Services (tasks 1.5 - 1.7) ----------
-  # restaurant  :3001  depends_on restaurants-db (service_healthy)
-  # order       :3002  depends_on orders-db (service_healthy)
-  # gateway     :3000  the only published port once it exists
+  # ---------- Services ----------
+  # No container_name on any of them: a fixed name makes
+  # `docker compose up --scale order=2` fail, and Phase 7 needs exactly that.
+  # Only the gateway publishes a port — it is the single public door.
 
-  # ---------- Phase 3: kafka + kafka-ui + notification ----------
-  # ---------- Phase 4: redis ----------
+  restaurant:
+    build: ./services/restaurant
+    environment:
+      DATABASE_URL: ${RESTAURANTS_DATABASE_URL}
+      PORT: 3001
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Run node scripts/setup-env.mjs first}
+      KAFKA_BROKERS: kafka:19092
+    depends_on:
+      restaurants-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      # node:22-alpine ships no curl, but Node 22 ships fetch.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/restaurants/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  order:
+    build: ./services/order
+    environment:
+      DATABASE_URL: ${ORDERS_DATABASE_URL}
+      PORT: 3002
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      RESTAURANT_SERVICE_URL: ${RESTAURANT_SERVICE_URL}
+      KAFKA_BROKERS: kafka:19092
+    depends_on:
+      orders-db:
+        condition: service_healthy
+      restaurant:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/api/orders/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  gateway:
+    build: ./services/gateway
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      RESTAURANT_SERVICE_URL: ${RESTAURANT_SERVICE_URL}
+      ORDER_SERVICE_URL: ${ORDER_SERVICE_URL}
+      PAYMENT_SERVICE_URL: http://payment:3003
+      NOTIFICATION_SERVICE_URL: http://notification:3004
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      JWT_SECRET: ${JWT_SECRET:?Run node scripts/setup-env.mjs first}
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      PORT: 3000
+    # service_healthy, not service_started: the gateway must not accept traffic
+    # before the services it forwards to can answer. Trap #3.
+    depends_on:
+      restaurant:
+        condition: service_healthy
+      order:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+      notification:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  payments-db:
+    image: postgres:16
+    ports: ["127.0.0.1:5435:5432"]
+    environment:
+      POSTGRES_DB: ${PAYMENTS_DB_NAME}
+      POSTGRES_USER: ${PAYMENTS_DB_USER}
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD}
+    volumes: [payments_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.9.1
+    ports: ["127.0.0.1:9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes: [kafka_data:/var/lib/kafka/data]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    profiles: [tools]
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: foodhub
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes', --appendfsync, everysec]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  payment:
+    build: ./services/payment
+    environment:
+      PORT: 3003
+      DATABASE_URL: ${PAYMENTS_DATABASE_URL}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      KAFKA_BROKERS: kafka:19092
+    depends_on:
+      payments-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3003/api/payments/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  notification:
+    build: ./services/notification
+    environment:
+      PORT: 3004
+      REDIS_URL: redis://redis:6379
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      KAFKA_BROKERS: kafka:19092
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3004/api/notifications/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
 
 volumes:
   restaurants_data:
   orders_data:
+  payments_data:
+  kafka_data:
+  redis_data:

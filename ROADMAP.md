@@ -1,91 +1,47 @@
-# FoodHub — Roadmap
+# FoodHub — roadmap at pause
 
-Progress checklist. Why each decision was made: `CLAUDE.md`. Current state: `PROJECT_STATE.md`.
+Updated 2026-09-17. This is the reference branch checklist. The learning branch
+starts from the original Phase 1 baseline and must not inherit these completion
+marks as learning progress.
 
-## Working loop — one task per sitting, one commit each
+## Implementation present
 
-| Step | Who |
-|---|---|
-| **BRIEF** — options and trade-offs | Claude |
-| **DECIDE** — pick one | **User** |
-| **SHIP** — write the files, run nothing | Claude |
-| **RUN** — type every `docker` / `npm` / `npx` / `curl` / `psql` command, paste output back | **User** |
-| **BREAK** — predict the outcome first, then run the failure exercise | **User** |
-| **EXPLAIN** — `docs/ai-journal/NN_topic.md` | **User** |
-| **COMMIT** | **User** types it, Claude drafts the message |
+- [x] Dockerfiles, Compose service wiring, healthchecks, startup migrations.
+- [x] Restaurant and dish CRUD; strict DTO validation.
+- [x] Synchronous checkout with authoritative pricing and durable idempotency.
+- [x] Kafka and two independent readers of order.created.
+- [x] Simulated payment success/failure and payment records.
+- [x] Transactional outboxes and stock compensation on payment failure.
+- [x] Redis notification deduplication and rate limiting.
+- [x] Demo JWT auth, forwarded identity, customer/admin access checks.
+- [x] GitHub Actions workflow written.
+- [x] Full Docker HTTP smoke scenario passed, including 100 buyers / one portion.
 
-Claude may read files, grep, and run `git status` / `log` / `diff`. Nothing that shows how the
-system behaves at runtime.
+## Verification still required
 
----
+- [ ] Investigate 7 restaurant Jest failures; latest total is 18 passed / 7 failed.
+- [ ] Rebuild the final source snapshot and rerun relevant checks.
+- [ ] Resolve dependency audit findings without an unreviewed major upgrade.
+- [ ] Run GitHub Actions remotely.
+- [ ] Validate Swagger UI and generated schemas.
+- [ ] Test interrupted checkout and broker outage/recovery.
+- [ ] Test consumer crash/redelivery and replay from the beginning.
+- [ ] Run two order instances and inspect partition assignment.
+- [ ] Verify Redis outage/rate-limit behavior.
 
-## Phase 1 — connectivity
+## Learning exercises
 
-Done when `curl localhost:3000/api/restaurants/health` answers through the gateway, from containers.
+These remain user work, irrespective of how much reference code exists:
 
-- [x] 1.1 Git identity — own GPG key, noreply email
-- [x] 1.2 Rewrite outer docs for the NestJS stack
-- [x] 1.3 Push `legacy/spring`, delete Java/Express from `main`
-- [x] 1.4 `docker-compose.yml` — 2 Postgres + healthchecks
-- [x] 1.5 `restaurant` — Prisma 7, `restaurants` + `dishes`, `/health` reports real DB state
-- [x] 1.6 `order` — Prisma 7, `orders` + `order_items`, `OrderStatus` enum, same `/health`
-- [ ] **1.7 Three Dockerfiles, services wired into compose** ← current
-- [ ] 1.8 `.github/workflows/ci.yml` — build + test on push
+- [ ] Explain Docker images, containers, networks, volumes and healthchecks.
+- [ ] Explain database-per-service and price snapshots.
+- [ ] Reproduce and explain downstream timeouts.
+- [ ] Explain topics, partitions, offsets and independent consumer groups.
+- [ ] Explain at-least-once delivery, idempotency and outboxes.
+- [ ] Explain why conditional SQL updates prevent overselling.
+- [ ] Explain JWT trust boundaries and Redis atomic operations.
+- [ ] Inspect a failing CI run and understand the failure.
+- [ ] Write the incident/decision journal in the user's own words.
 
-## Phase 2 — real data
-
-Done when order #123 exists with a price read from restaurant-service, not from the client.
-
-- [ ] Swagger, DTOs and Entities appear here — the first endpoints that return rows
-- [ ] `restaurant`: `restaurants/` and `dishes/` modules, CRUD
-- [ ] `order`: `orders/` module, `POST /orders`
-- [ ] order → restaurant over HTTP: does this dish exist, what does it really cost
-- [ ] **Break:** downstream hangs 60s, 100 concurrent requests → cascading failure
-
-## Phase 3 — Kafka
-
-Done when all six experiments in `docs/KAFKA.md` have been run.
-
-- [ ] Kafka 3.9 (KRaft) + Kafka UI in compose
-- [ ] `order` publishes `order.created` after the write commits
-- [ ] `notification-service` (:3004) consumes it
-- [ ] **Break:** kill a consumer mid-batch before offset commit → why redelivery, why idempotency
-- [ ] **Break:** 3 partitions, 4 consumers in one group → why the 4th sits idle
-- [ ] **Break:** replay from offset 0 → why a queue cannot do this
-
-## Phase 4 — the actual reason for Kafka
-
-Done when two independent consumer groups read one topic.
-
-- [ ] `payment-service` (:3003) — second consumer group on `order.created`
-- [ ] publishes `payment.succeeded`, notification consumes that too
-
-## Phase 5 — Redis
-
-Done when 100 concurrent requests for one portion produce zero oversell.
-
-- [ ] Redis in compose
-- [ ] Atomic stock check on the last portion
-- [ ] Consumer idempotency
-- [ ] **Break:** 100 concurrent orders, 1 portion — count the oversells without the lock first
-
-## Phase 6 — auth
-
-- [ ] JWT at the gateway, identity propagated downstream
-- [ ] Rate limiting
-- [ ] Decide and journal: own service, or inside the gateway
-
-## Phase 7 — operations
-
-- [ ] Two `order-service` instances
-- [ ] Watch the consumer group split partitions between them
-
-## Later — scope C
-
-Driver assignment, live location, delivery completion, customer rating. Only after the above runs.
-
----
-
-## Estimate
-
-~4 sittings left in Phase 1, 3–6 per phase after that.
+Scope C (delivery and driver tracking) remains deferred. Work is paused; do not
+continue building features until the user asks.

@@ -14,3 +14,5 @@ npm-debug.log*
 # Build
 dist/
 build/
+.npm-cache/
+coverage/

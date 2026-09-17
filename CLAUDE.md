@@ -1,5 +1,17 @@
 # CLAUDE.md — FoodHub
 
+> **Session state, 2026-09-17:** work is paused at the user's request.
+> This branch is `codex/reference-implementation`, an AI-written reference.
+> The user will learn on `codex/learning`, created from original `main` at
+> `c12a2a6`. Do not resume feature work or copy the reference into learning
+> without a new request. Current implementation and failed checks are in
+> [PROJECT_STATE.md](PROJECT_STATE.md); branch/data handling is in
+> [docs/BRANCHES.md](docs/BRANCHES.md).
+>
+> The working agreement below is historical context. Its old Phase 1 state and
+> future-tense descriptions are superseded by the current Project State and
+> Architecture documents; implementation does not mean the learning is complete.
+
 Food delivery platform as microservices. Learning project: the goal is to **defend every technical
 decision in an interview**, not to ship a product.
 
@@ -20,9 +32,11 @@ Delivery and driver tracking are scope C, deferred.
 
 > Migrated from Spring Boot + Express to NestJS on 2026-09-06. The old code is on the
 > `legacy/spring` branch, **not** on `main` — do not resurrect it.
-> Live infrastructure right now: `restaurants-db` (5433) and `orders-db` (5434), both healthy.
-> `gateway` and `restaurant` exist and are tested; `restaurant` talks to Postgres through Prisma.
-> `order` still has no database. Nothing is containerised yet — see `PROJECT_STATE.md`.
+>
+> **On this branch** five services are containerised — `gateway`, `restaurant`, `order`, `payment`,
+> `notification` — with three Postgres (5433/5434/5435), Kafka 3.9.1 KRaft (9092), Redis (6379) and
+> an optional Kafka UI (8080). All ports bind to loopback. Containers were stopped at pause; volumes
+> kept. Verified state and the seven failing restaurant tests: `PROJECT_STATE.md`.
 
 ---
 
@@ -156,29 +170,42 @@ when the copies drift. That is the distributed-contract lesson, not a design fla
 Phases, tasks and per-phase breakage exercises: **[`ROADMAP.md`](ROADMAP.md)**. It also holds the
 step-by-step working loop and the rule on who types which commands.
 
-Currently **Phase 1**, task 1.6. One task per sitting, one commit each.
+**On this branch** the roadmap is not a to-do list: phases 1–6 have reference code, and `ROADMAP.md`
+separates *implementation present* from *verification still required* from *learning exercises*. The
+third list is the one that matters, and none of it is done.
+
+On `codex/learning` the roadmap reads normally, starting at Phase 1 task 1.7. One task per sitting,
+one commit each.
 
 1.4 was split from 1.5 on purpose: stand up the databases, confirm the healthchecks, *then* plug
 services in. When it breaks you know which layer.
 
-### Target layout
+### Layout
+
+On this branch, all five exist:
 
 ```
 foodhub-microservices/
 ├── docker-compose.yml
-├── README.md · CLAUDE.md · CLAUDE_RULES.md · PROJECT_STATE.md
+├── README.md · CLAUDE.md · CLAUDE_RULES.md · PROJECT_STATE.md · ROADMAP.md
 ├── .github/workflows/ci.yml
+├── scripts/              setup-env.mjs · smoke.mjs
 ├── docs/
-│   ├── ARCHITECTURE.md · RUNNING.md
-│   ├── KAFKA.md                     ← Phase 3
+│   ├── ARCHITECTURE.md · RUNNING.md · BRANCHES.md · BUSINESS_OVERVIEW.md
 │   └── ai-journal/
 └── services/
-    ├── gateway/       :3000
+    ├── gateway/       :3000   the only published app port
     ├── restaurant/    :3001 + restaurants-db :5433
-    └── order/         :3002 + orders-db :5434
+    ├── order/         :3002 + orders-db      :5434
+    ├── payment/       :3003 + payments-db    :5435
+    └── notification/  :3004   no database — Redis inboxes
 ```
 
-No `notification/` until **Phase 3**, no `payment/` until **Phase 4**. A folder holding only an empty
+Plus `kafka` (9092), `redis` (6379) and an optional `kafka-ui` (8080). Every port binds to
+`127.0.0.1`.
+
+On `codex/learning` only the first three folders exist. The rule there still holds: no
+`notification/` until **Phase 3**, no `payment/` until **Phase 4**. A folder holding only an empty
 README is debt, and it teaches the reader that the folder is decorative.
 
 **Still open:** where auth lives — its own service, or inside the gateway. Decide in Phase 6 and

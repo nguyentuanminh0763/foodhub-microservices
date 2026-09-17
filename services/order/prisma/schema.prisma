@@ -12,6 +12,7 @@ datasource db {
 }
 
 enum OrderStatus {
+  RESERVING
   PENDING
   PAID
   CONFIRMED
@@ -25,8 +26,29 @@ model Order {
   totalVnd  Int         @map("total_vnd")
   createdAt DateTime    @default(now()) @map("created_at")
   items     OrderItem[]
+  userId       String @default("legacy") @map("user_id")
+  restaurantId Int @default(0) @map("restaurant_id")
+  requestKey   String? @map("request_key")
+  request      Json?
+  failure      String?
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([userId, requestKey])
+  @@index([userId, createdAt])
 
   @@map("orders")
+}
+
+model Outbox {
+  id          String @id @default(uuid())
+  topic       String
+  aggregateId String @map("aggregate_id")
+  payload     Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  sentAt      DateTime? @map("sent_at")
+
+  @@index([sentAt, createdAt])
+  @@map("outbox")
 }
 
 model OrderItem {

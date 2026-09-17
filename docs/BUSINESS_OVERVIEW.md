@@ -1,5 +1,10 @@
 # What FoodHub actually is
 
+> Reference snapshot, 2026-09-17: the story below is the product/learning target.
+> The current backend uses simulated payments and API-readable notification
+> inboxes. There is no frontend or push delivery. Work is paused; see
+> [PROJECT_STATE.md](../PROJECT_STATE.md) for verified behavior and known failures.
+
 A food ordering app. A customer browses nearby restaurants, orders dishes, pays, and the restaurant
 is notified and confirms.
 
@@ -77,7 +82,8 @@ Every one of these points at a line above. None is decorative.
 |---|---|
 | **Synchronous HTTP** | 19:32 step 1. Minh is staring at a spinner. Without the real price there is no 110,000đ to display. The caller genuinely cannot continue without the answer |
 | **Kafka** | 19:32 posting. *One* event, *three* independent readers, and order-service knows none of them. Adding analytics later changes nothing in order-service |
-| **Redis** | "canh chua — 3 portions left". At 19:32:01 five people tap Order simultaneously. Without a lock all five succeed and the restaurant is short two portions |
+| **Postgres conditional stock updates** | "canh chua — 3 portions left". Concurrent buyers must compete atomically for the remaining portions. The reference performs the stock check and decrement in one database transaction |
+| **Redis** | Request rate limits and atomic notification inbox deduplication; it is not the reference's stock authority |
 | **Postgres, one per service** | restaurant-service owns dishes and prices; order-service owns orders. order-service must *ask*, not `JOIN`. That constraint is what forces step 1 to exist at all |
 
 ## Services in scope B

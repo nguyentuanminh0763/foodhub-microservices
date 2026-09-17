@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Payment {
+  id        Int @id @default(autoincrement())
+  orderId   Int @unique @map("order_id")
+  userId    String @map("user_id")
+  amountVnd Int @map("amount_vnd")
+  status    String
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("payments")
+}
+
+model Outbox {
+  id          String @id @default(uuid())
+  topic       String
+  aggregateId String @map("aggregate_id")
+  payload     Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  sentAt      DateTime? @map("sent_at")
+  @@index([sentAt, createdAt])
+  @@map("outbox")
+}
