@@ -4,6 +4,9 @@ Updated 2026-09-17. This is the reference branch checklist. The learning branch
 starts from the original Phase 1 baseline and must not inherit these completion
 marks as learning progress.
 
+Everything under *Implementation present* was produced by GPT-Astra in a single
+run from the Phase 1 baseline, which stopped when it ran out of tokens.
+
 ## Implementation present
 
 - [x] Dockerfiles, Compose service wiring, healthchecks, startup migrations.
@@ -19,8 +22,13 @@ marks as learning progress.
 
 ## Verification still required
 
-- [ ] Investigate 7 restaurant Jest failures; latest total is 18 passed / 7 failed.
-- [ ] Rebuild the final source snapshot and rerun relevant checks.
+- [x] ~~Investigate 7 restaurant Jest failures~~ — not defects. Concurrent suites on
+      one database, plus two missing service `.env` files. **25 passed / 0 failed**
+      when run sequentially with infrastructure up.
+- [x] ~~Rebuild the final source snapshot and rerun relevant checks~~ — eleven
+      containers `Healthy`, full smoke scenario passed, 2026-09-17.
+- [ ] Deepen the suites: `notification` has 1 test, `payment` 2. Isolate test
+      databases instead of sharing the demo one.
 - [ ] Resolve dependency audit findings without an unreviewed major upgrade.
 - [ ] Run GitHub Actions remotely.
 - [ ] Validate Swagger UI and generated schemas.

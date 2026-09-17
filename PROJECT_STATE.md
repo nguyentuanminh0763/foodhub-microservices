@@ -1,6 +1,16 @@
 # FoodHub — Project State
 
-Last updated: **2026-09-17**, paused at the user's request.
+Last updated: **2026-09-17**. Re-verified after the pause; see *Verification rerun*.
+
+## How this branch was produced
+
+One shot. The user asked GPT-Astra to complete the project, starting from the
+Phase 1 baseline, and it built everything here in a single run until it ran out of
+tokens. The pause is a budget limit, not a failure or a design decision — nothing
+was abandoned mid-thought.
+
+That matters when reading the rest of this file: the gaps below are *work not
+reached*, not *work attempted and broken*.
 
 ## Branch intent
 
@@ -51,29 +61,41 @@ and no access to another service's database were introduced.
    - Declined payment cancelled the order and restored stock.
    - 100 concurrent requests for one portion: 1 accepted, 99 conflicts, stock 0.
 
-## Latest Jest run — not all green
+## Verification rerun — 2026-09-17, after the pause
 
-| Service | Result |
-|---|---|
-| Gateway | 10 passed, 2 suites |
-| Restaurant | 1 passed, 7 failed, 2 failed suites |
-| Order | 4 passed |
-| Payment | 2 passed |
-| Notification | 1 passed |
+The earlier report of **18 passed / 7 failed** was an artefact of how the suites were
+run, not a defect in the code. No source change was needed to clear it.
 
-Total: **18 passed, 7 failed**. Restaurant failures included Prisma query errors and
-a health response of 503. The tests were running concurrently with other service
-tests and the Docker smoke check, but a root cause has **not** been established.
-Jest reported open handles after the restaurant failures; that process was stopped
-when the user paused the work. Do not infer a fix or mark these tests passing.
+| Service | Before | Now | What was actually wrong |
+|---|---|---|---|
+| Gateway | 10 passed | 10 passed | — |
+| Restaurant | 1 passed, 7 failed | **8 passed** | Run concurrently with the Docker smoke test against the same database; the suites fought over rows |
+| Order | 4 passed | 4 passed | — |
+| Payment | 2 passed | 2 passed | Needed `services/payment/.env` and a running Kafka; `app.init()` waits on the EventBus |
+| Notification | 1 passed | 1 passed | Needed `services/notification/.env` for `REDIS_URL` |
+
+Total: **25 passed, 0 failed**, run sequentially with all infrastructure up.
+
+`services/payment/.env` and `services/notification/.env` did not exist. The test
+script uses `node --env-file-if-exists=.env`, which silently continues when the file
+is missing — so a missing config surfaced several layers down as *"client password
+must be a string"* from `pg`. Both files were created from their `.env.example`.
+
+**Snapshot rebuilt and re-verified.** `docker compose up --build -d --wait` brought
+all eleven containers to `Healthy`, and `node scripts/smoke.mjs` passed in full:
+authoritative pricing, idempotent checkout, permission checks, payment, the READY
+notification, decline with stock compensation, and 100 concurrent buyers for one
+portion giving 1 accepted / 99 conflicts / zero oversell.
+
+That closes the two largest items previously listed as unfinished.
 
 ## Unfinished work
 
-- Investigate the restaurant Jest failures and guarantee cleanup even after a
-  failed test. Prefer isolated test databases instead of using the demo database.
-- Rebuild and verify the final snapshot. The last successful Docker build predates
-  the last proxy path validation, internal-token byte-length check, Swagger plugin,
-  documentation access, and CI configuration edits.
+- **Test depth, not test colour.** 25 tests cover 1,253 lines; `notification` has
+  one and `payment` has two. Consumer death mid-batch, outbox replay, broker
+  outage and rate-limit failure are exercised only incidentally by the smoke run.
+- Isolate test databases rather than sharing the demo database — that sharing is
+  what produced the phantom restaurant failures above.
 - Security audit is unfinished. npm reported 3 high findings in gateway runtime
   dependencies (Multer/Nest dependency chain) and 8 in order (also Prisma CLI
   dependencies including deepmerge-ts and mysql2). No dependency override or

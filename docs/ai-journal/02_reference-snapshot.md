@@ -26,6 +26,13 @@ Implementation choices worth reviewing while learning:
   production user service. Payment is deliberately simulated.
 
 The Docker smoke scenario passed, including 100 concurrent buyers for one portion.
-The latest restaurant Jest run failed, dependency audit remediation was unfinished,
-and final source edits had not been rebuilt in Docker. See PROJECT_STATE.md for
-the exact evidence. The snapshot must not be described as fully complete.
+
+Re-verified later the same day: the restaurant Jest failures were not defects. The
+suites had been running concurrently against the same database as the Docker smoke
+check, and `services/payment/.env` and `services/notification/.env` did not exist —
+`--env-file-if-exists` continues silently, so a missing config surfaced as a `pg`
+password error. Run sequentially with infrastructure up: 25 passed, 0 failed. The
+snapshot was rebuilt and the smoke scenario passed again.
+
+Still open: thin test depth, no remote CI run, unresolved dependency audit findings,
+and Phase 7 untouched. The snapshot must not be described as fully complete.

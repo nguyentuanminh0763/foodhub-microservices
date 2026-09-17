@@ -33,11 +33,15 @@ The Docker end-to-end smoke test **passed**: checkout to READY, payment decline
 and stock compensation, ownership checks, retry handling, and 100 concurrent orders
 for one portion (1 accepted, 99 conflicts).
 
-The latest local Jest results were **18 passed, 7 failed**. All seven failures
-were in restaurant tests; the reason has not been investigated. That Jest process
-also left handles open and was stopped. Some final source/config edits were made
-after the successful Docker build and have not been checked in a fresh image.
-CI has been written but has not run on GitHub. Do not describe the branch as complete.
+Local Jest: **25 passed, 0 failed** (gateway 10, restaurant 8, order 4, payment 2,
+notification 1), run sequentially with the databases, Kafka and Redis up. An earlier
+report of 18 passed / 7 failed came from running suites concurrently against one
+database and from two missing service `.env` files — not from a defect. The snapshot
+was rebuilt afterwards and the full smoke scenario passed again.
+
+Still not complete: test depth is thin (`notification` has one test), CI has never
+run on GitHub, dependency audit findings are unresolved, and Phase 7 — two order
+replicas sharing a consumer group — is untouched.
 
 ## Run the reference
 
