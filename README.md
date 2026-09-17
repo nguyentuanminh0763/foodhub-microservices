@@ -5,9 +5,9 @@ for learning, not a finished or production-ready release.
 
 | Branch | Purpose |
 |---|---|
-| `main` | Original baseline, unchanged at `c12a2a6` |
-| `codex/learning` | User-led learning, starting from that baseline |
-| `codex/reference-implementation` | This implementation and its known unfinished work |
+| `main` | This implementation, with its known unfinished work |
+| `codex/reference-implementation` | Same commit; a named marker of the snapshot |
+| `codex/learning` | Phase 1 baseline `c12a2a6`, for user-led learning |
 
 Read [PROJECT_STATE.md](PROJECT_STATE.md) for verified results and unresolved issues.
 Read [docs/BRANCHES.md](docs/BRANCHES.md) before switching or starting Docker.

@@ -17,15 +17,16 @@ reached*, not *work attempted and broken*.
 The user wants to implement the project incrementally and consult AI-written code
 only when stuck. Preserve the distinction:
 
-- `main`: unchanged baseline commit `c12a2a6bd6ba308dd8eabedffc021555badcae38`.
-- `codex/learning`: starts from that baseline; no reference implementation copied.
-- `codex/reference-implementation`: saves all current implementation changes,
-  including the Dockerfiles/Compose work already present when this session began.
+- `main`: the reference implementation, fast-forwarded on 2026-09-17.
+- `codex/reference-implementation`: the same commit, kept as a named marker.
+- `codex/learning`: the Phase 1 baseline `c12a2a6bd6ba308dd8eabedffc021555badcae38`;
+  no reference implementation copied.
 
 **Do not resume feature development without a new user request.** This snapshot is
 a reference, not evidence that the user has completed the learning exercises.
 
-Both `codex/*` branches are pushed. `main` was not moved.
+All three branches are pushed. Learning work happens on `codex/learning` and must
+not pull code from `main` — see `docs/BRANCHES.md`.
 
 ## Implementation inventory
 

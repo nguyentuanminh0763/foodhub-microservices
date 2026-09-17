@@ -4,15 +4,20 @@ Created at the user's request on 2026-09-17. Feature work is paused.
 
 | Branch | Purpose |
 |---|---|
-| `main` | Original baseline at `c12a2a6bd6ba308dd8eabedffc021555badcae38`; unchanged |
-| `codex/learning` | Starts from original main; user implements one task at a time |
-| `codex/reference-implementation` | Saved AI-written implementation, tests and current-state documentation |
+| `main` | The reference implementation. Fast-forwarded to it on 2026-09-17 |
+| `codex/reference-implementation` | Same commit as `main`; kept as a named marker of the snapshot |
+| `codex/learning` | The Phase 1 baseline; user implements one task at a time |
 
 The learning branch may contain orientation/status documentation added after the
 baseline. It does not include the reference feature code.
 
-Both `codex/*` branches are pushed to GitHub. `main` still points at the baseline
-and was not moved.
+**The baseline is still reachable** — it is commit
+`c12a2a6bd6ba308dd8eabedffc021555badcae38`, and `codex/learning` points at it. Since
+`main` moved forward, the learning branch now sits *behind* `main` rather than
+branching from its tip. That is intentional: learning restarts from Phase 1 task 1.7
+regardless of what `main` contains.
+
+All three branches are pushed to GitHub.
 
 ## Use the reference selectively
 
